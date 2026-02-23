@@ -58,9 +58,7 @@ class NeuralGeoRTRetargeter:
         self.joint_upper = joint_upper
 
         # Build IK model and load checkpoint
-        self._n_input_per_finger = config.get("n_input_per_finger", 3)
-        self.ik_model = IKModel(keypoint_joints=keypoint_joints,
-                                n_input_per_finger=self._n_input_per_finger).to(self.device)
+        self.ik_model = IKModel(keypoint_joints=keypoint_joints).to(self.device)
         state_dict = torch.load(geort_checkpoint, map_location=self.device, weights_only=True)
         self.ik_model.load_state_dict(state_dict)
         self.ik_model.eval()
@@ -77,8 +75,6 @@ class NeuralGeoRTRetargeter:
         # Source-specific landmark indices for extracting from canonical frame
         finger_names = [info["name"] for info in config["fingertip_link"]]
         self._fingertip_indices = self._get_fingertip_indices(finger_names)
-        self._pip_indices = self._get_pip_indices(finger_names)
-
         # Rotation from GeoRT canonical frame to URDF palm-local frame (90° around Z).
         # Canonical: X=palm normal, Y=across palm (index→ring), Z=along fingers
         # Palm:      X=across palm (thumb→pinky), Y=palm normal, Z=along fingers
@@ -120,13 +116,6 @@ class NeuralGeoRTRetargeter:
         tip_map = manus_tips if self.source == "manus" else mediapipe_tips
         return [tip_map[name] for name in finger_names]
 
-    def _get_pip_indices(self, finger_names):
-        """Get PIP joint landmark indices per source, in config's finger order."""
-        mediapipe_pip = {"thumb": 3, "index": 6, "middle": 10, "ring": 14, "pinky": 18}
-        manus_pip = {"thumb": 22, "index": 2, "middle": 7, "ring": 17, "pinky": 12}
-        pip_map = manus_pip if self.source == "manus" else mediapipe_pip
-        return [pip_map[name] for name in finger_names]
-
     def retarget(self, data: np.ndarray, manual_wrist_angle: Union[float, None] = None) -> Dict[str, float]:
 
         if self.source == "avp":
@@ -144,13 +133,8 @@ class NeuralGeoRTRetargeter:
         canonical = retargeter_utils.to_geort_canonical_frame(joints, self.source)
         palm_frame = canonical @ self._canonical_to_palm
 
-        # Extract fingertip positions (+ PIP context if model expects it)
-        fingertips = palm_frame[self._fingertip_indices]  # (N_fingers, 3)
-        if self._n_input_per_finger > 3:
-            pip_joints = palm_frame[self._pip_indices]     # (N_fingers, 3)
-            ik_input = np.concatenate([fingertips, pip_joints], axis=-1)  # (N_fingers, 6)
-        else:
-            ik_input = fingertips  # (N_fingers, 3)
+        # Extract fingertip positions
+        ik_input = palm_frame[self._fingertip_indices]  # (N_fingers, 3)
 
         # IK model forward pass
         with torch.no_grad():

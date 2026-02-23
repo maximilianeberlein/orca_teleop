@@ -76,13 +76,10 @@ def main():
     }
     tip_map = FINGERTIP_INDICES[args.source]
     human_ids = [tip_map[name] for name in finger_names]
-    n_input_per_finger = 3  # fingertip xyz only
-
     print(f"Fingers: {finger_names}")
     print(f"Source: {args.source}")
     print(f"Keypoint joints: {keypoint_joints}")
     print(f"Fingertip indices: {human_ids}")
-    print(f"IK input per finger: {n_input_per_finger}")
 
     # Joint limits from URDF
     import xml.etree.ElementTree as ET
@@ -110,7 +107,7 @@ def main():
     print(f"Loaded FK model from {fk_ckpt}")
 
     # IK model (3 inputs per finger: fingertip xyz)
-    ik_model = IKModel(keypoint_joints=keypoint_joints, n_input_per_finger=n_input_per_finger).to(device)
+    ik_model = IKModel(keypoint_joints=keypoint_joints).to(device)
     ik_optim = optim.AdamW(ik_model.parameters(), lr=1e-4)
 
     # Robot pointcloud for chamfer loss (from FK dataset)
@@ -161,7 +158,6 @@ def main():
         "lower": joint_lower.tolist(),
         "upper": joint_upper.tolist()
     }
-    export_config["n_input_per_finger"] = n_input_per_finger
     save_json(export_config, save_dir / "config.json")
     save_json(export_config, last_save_dir / "config.json")
 
