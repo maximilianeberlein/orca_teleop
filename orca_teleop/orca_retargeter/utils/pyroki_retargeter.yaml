@@ -1,10 +1,6 @@
 use_scalar_distance_palm: False
 loss_coeffs: [5.0, 5.0, 5.0, 5.0, 5.0]
 
-# PIP-MCP coupling: drives PIP to flex proportionally to MCP
-pip_coupling_ratio: 0.67
-pip_coupling_weight: 5.0
-
 # LM solver settings
 max_iterations: 20
 trust_region_lambda_initial: 1.0
@@ -15,6 +11,7 @@ smoothness_weight: 0.0
 
 joint_regularizers:  # tuples (joint_name, zero_value, weight) for regularizing joints to zero
   # Abduction → 0
+  - [thumb_abd, 0, 0]
   - [index_abd, 0,  0]
   - [middle_abd, 0, 0]
   - [ring_abd, 0, 0]

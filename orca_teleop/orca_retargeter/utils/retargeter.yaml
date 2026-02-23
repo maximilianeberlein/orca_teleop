@@ -4,6 +4,7 @@ loss_coeffs: [5.0, 5.0, 5.0, 5.0, 5.0,]
 
 joint_regularizers:  # tuples (joint_name, zero_value, weight) for regularizing joints to zero
   # Abduction → 0
+  - [thumb_abd, 0, 0]
   - [index_abd, 0,  0]
   - [middle_abd, 0, 0]
   - [ring_abd, 0, 0]

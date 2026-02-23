@@ -68,17 +68,18 @@ class Retargeter:
 
         self._fingertip_offsets = retargeter_utils.get_fingertip_offset_tensors(self.fingers, self.device)
 
-        # Compute URDF key vector magnitudes at extended config (for auto-scaling)
-        extended_angles = torch.zeros(self.chain.n_joints, device=self.device)
+        # Compute URDF key vector magnitudes at neutral config (for auto-scaling)
+        # Use halfway between curled (0) and extended (-ref) to approximate relaxed pose
+        neutral_angles = torch.zeros(self.chain.n_joints, device=self.device)
         ref_rad_tensor = torch.tensor(
             retargeter_utils.get_ref_offsets_array(self.joint_ids),
             device=self.device, dtype=torch.float32)
-        extended_angles[self.joint_reorder_indices] = -ref_rad_tensor
+        neutral_angles[self.joint_reorder_indices] = -0.5 * ref_rad_tensor
         urdf_fingertips, urdf_palm = retargeter_utils.extract_orca_fingertips_and_palm(
-            self.chain, extended_angles, self.optimization_frames, self.hand_type, self.fingers, self.root,
+            self.chain, neutral_angles, self.optimization_frames, self.hand_type, self.fingers, self.root,
             fingertip_offsets=self._fingertip_offsets)
         urdf_keyvectors = retargeter_utils.get_keyvectors(urdf_fingertips, urdf_palm)
-        self._urdf_keyvector_mags = np.array([kv.detach().cpu().norm().item() for kv in urdf_keyvectors])
+        self._urdf_keyvector_mags = 0.9 * np.array([kv.detach().cpu().norm().item() for kv in urdf_keyvectors])
 
         # Manual calibration (adjustable at runtime via viewer sliders)
         self.manual_scale = 1.0

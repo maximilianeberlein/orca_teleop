@@ -45,11 +45,9 @@ def _build_solve_fn(max_iterations, trust_region_lambda_initial, linear_solver):
         reg_weights: jax.Array,
         smoothness_weight: jax.Array,
         wrist_pyroki_idx: jax.Array,
-        coupling_mcp_indices: jax.Array,
-        coupling_pip_indices: jax.Array,
-        coupling_ratio: jax.Array,
-        coupling_weight: jax.Array,
         fingertip_offsets: jax.Array,
+        joint_limits_lower: jax.Array,
+        joint_limits_upper: jax.Array,
     ) -> jax.Array:
         joint_var = robot.joint_var_cls(0)
         variables = [joint_var]
@@ -107,22 +105,21 @@ def _build_solve_fn(max_iterations, trust_region_lambda_initial, linear_solver):
             return jnp.sqrt(weight) * (cfg - prev)
 
         @jaxls.Cost.factory
-        def pip_coupling_cost(
+        def limit_cost(
             vals: jaxls.VarValues,
             var_cfg: jaxls.Var[jax.Array],
         ) -> jax.Array:
             cfg = vals[var_cfg]
-            mcp_angles = cfg[coupling_mcp_indices]
-            pip_angles = cfg[coupling_pip_indices]
-            return jnp.sqrt(coupling_weight) * (pip_angles - coupling_ratio * mcp_angles)
+            lower_violation = jnp.maximum(joint_limits_lower - cfg, 0.0)
+            upper_violation = jnp.maximum(cfg - joint_limits_upper, 0.0)
+            return 100.0 * (lower_violation + upper_violation)
 
         costs = [
             keyvector_cost(joint_var, target_keyvectors),
             regularization_cost(joint_var),
-            pk.costs.limit_constraint(robot, joint_var),
+            limit_cost(joint_var),
             smoothness_cost(joint_var, prev_cfg, smoothness_weight * use_prev_cfg),
             wrist_zero_cost(joint_var),
-            pip_coupling_cost(joint_var),
         ]
 
         initial_vals = jaxls.VarValues.make([joint_var.with_value(
@@ -204,27 +201,6 @@ class PyRoKIRetargeter:
         self._lower_limits_deg = np.array(lower_limits) - ref_offsets_deg
         self._upper_limits_deg = np.array(upper_limits) - ref_offsets_deg
 
-        coupling_pairs = [
-            ("index_mcp", "index_pip"),
-            ("middle_mcp", "middle_pip"),
-            ("ring_mcp", "ring_pip"),
-            ("pinky_mcp", "pinky_pip"),
-            ("thumb_pip", "thumb_dip"),
-        ]
-        self._coupling_mcp_indices = jnp.array([
-            pyroki_joint_names.index(f"{self.hand_type}_{mcp}") for mcp, _ in coupling_pairs
-        ])
-        self._coupling_pip_indices = jnp.array([
-            pyroki_joint_names.index(f"{self.hand_type}_{pip}") for _, pip in coupling_pairs
-        ])
-        self._coupling_ratio = jnp.array(cfg["pip_coupling_ratio"])
-        self._coupling_weight = jnp.array(cfg["pip_coupling_weight"])
-        self._coupling_ratio_float = float(cfg["pip_coupling_ratio"])
-        self._coupling_orca_pairs = [
-            (self.joint_ids.index(mcp), self.joint_ids.index(pip))
-            for mcp, pip in coupling_pairs
-        ]
-
         self._solve_jax = _build_solve_fn(
             max_iterations=cfg["max_iterations"],
             trust_region_lambda_initial=cfg["trust_region_lambda_initial"],
@@ -244,6 +220,11 @@ class PyRoKIRetargeter:
         # reg_pyroki[j] = reg_orca[_pyroki_to_orca[j]] (value for the joint at PyRoKI position j)
         self._reg_zeros_pyroki = jnp.array(regularizer_zeros[self._pyroki_to_orca])
         self._reg_weights_pyroki = jnp.array(regularizer_weights[self._pyroki_to_orca])
+
+        self._joint_limits_lower_pyroki = jnp.array(
+            np.deg2rad(self._lower_limits_deg[self._pyroki_to_orca]))
+        self._joint_limits_upper_pyroki = jnp.array(
+            np.deg2rad(self._upper_limits_deg[self._pyroki_to_orca]))
 
         self._fingertip_offsets_jax = jnp.array([FINGERTIP_OFFSETS[f] for f in self.fingers])  # (5, 3)
 
@@ -273,16 +254,16 @@ class PyRoKIRetargeter:
             self._reg_zeros_pyroki, self._reg_weights_pyroki,
             self._smoothness_weight,
             self._wrist_pyroki_idx,
-            self._coupling_mcp_indices, self._coupling_pip_indices,
-            self._coupling_ratio, self._coupling_weight,
             self._fingertip_offsets_jax,
+            self._joint_limits_lower_pyroki, self._joint_limits_upper_pyroki,
         )
         print("PyRoKI: JIT compilation complete.")
 
     def _compute_urdf_reference_params(self):
-        extended_orca_rad = -np.array(
+        # Use halfway between curled (0) and extended (-ref) to approximate relaxed pose
+        neutral_orca_rad = -0.5 * np.array(
             retargeter_utils.get_ref_offsets_array(self.joint_ids), dtype=np.float32)
-        extended_cfg = jnp.array(extended_orca_rad[self._pyroki_to_orca])
+        extended_cfg = jnp.array(neutral_orca_rad[self._pyroki_to_orca])
         fk = self.robot.forward_kinematics(cfg=extended_cfg)  # (n_links, 7)
 
         def _get_pos(link_idx):
@@ -311,7 +292,7 @@ class PyRoKIRetargeter:
         palm = (thumb_base + pinky_base) / 2.0 - np.array([0, 0, 0.015])
 
         urdf_keyvectors = [fingertip_positions[f] - palm for f in self.fingers]
-        self._urdf_keyvector_mags = np.array([np.linalg.norm(kv) for kv in urdf_keyvectors])
+        self._urdf_keyvector_mags = 0.9 * np.array([np.linalg.norm(kv) for kv in urdf_keyvectors])
 
     _PALM_OFFSET = torch.tensor([0, 0, 0.015], dtype=torch.float32)
 
@@ -340,20 +321,14 @@ class PyRoKIRetargeter:
             self._reg_zeros_pyroki, self._reg_weights_pyroki,
             self._smoothness_weight,
             self._wrist_pyroki_idx,
-            self._coupling_mcp_indices, self._coupling_pip_indices,
-            self._coupling_ratio, self._coupling_weight,
             self._fingertip_offsets_jax,
+            self._joint_limits_lower_pyroki, self._joint_limits_upper_pyroki,
         )
 
         # Reorder from PyRoKI joint order to ORCA joint order:
         # orca[i] = pyroki[_orca_to_pyroki[i]] (pick the PyRoKI value for ORCA's i-th joint)
         orca_angles_rad = np.array(optimized_cfg)[self._orca_to_pyroki]
         orca_angles_deg = np.rad2deg(orca_angles_rad)
-
-        # Hard PIP-MCP coupling: PIP has zero FK gradient for keyvectors,
-        # so override with ratio * MCP to guarantee correct PIP tracking
-        for mcp_idx, pip_idx in self._coupling_orca_pairs:
-            orca_angles_deg[pip_idx] = self._coupling_ratio_float * orca_angles_deg[mcp_idx]
 
         orca_angles_deg = np.clip(orca_angles_deg, self._lower_limits_deg, self._upper_limits_deg)
 
@@ -382,7 +357,7 @@ class PyRoKIRetargeter:
                 print(f"  {finger:6s} kv: target=[{tgt_kv[0]:+.4f},{tgt_kv[1]:+.4f},{tgt_kv[2]:+.4f}]  "
                       f"urdf=[{urdf_kv[0]:+.4f},{urdf_kv[1]:+.4f},{urdf_kv[2]:+.4f}]")
 
-        # Update warm-start with the coupled values (in PyRoKI order)
+        # Update warm-start (in PyRoKI order)
         self._prev_cfg = np.deg2rad(orca_angles_deg)[self._pyroki_to_orca]
         self._prev_cfg[int(self._wrist_pyroki_idx)] = 0.0
 

@@ -94,15 +94,16 @@ class NeuralGeoRTRetargeter:
         viz_fingertip_offsets = retargeter_utils.get_fingertip_offset_tensors(self._fingers, "cpu")
         viz_joint_names = viz_chain.get_joint_parameter_names()
         viz_reorder = [viz_joint_names.index(f"{self.hand_type}_{jid}") for jid in self.joint_ids]
-        extended_angles = torch.zeros(viz_chain.n_joints)
+        # Use halfway between curled (0) and extended (-ref) to approximate relaxed pose
+        neutral_angles = torch.zeros(viz_chain.n_joints)
         ref_rad = torch.tensor(
             retargeter_utils.get_ref_offsets_array(self.joint_ids), dtype=torch.float32)
-        extended_angles[viz_reorder] = -ref_rad
+        neutral_angles[viz_reorder] = -0.5 * ref_rad
         urdf_ft, urdf_palm = retargeter_utils.extract_orca_fingertips_and_palm(
-            viz_chain, extended_angles, viz_frames, self.hand_type, self._fingers, viz_root,
+            viz_chain, neutral_angles, viz_frames, self.hand_type, self._fingers, viz_root,
             fingertip_offsets=viz_fingertip_offsets)
         urdf_kvs = retargeter_utils.get_keyvectors(urdf_ft, urdf_palm)
-        self._urdf_kv_mags = np.array([kv.detach().cpu().norm().item() for kv in urdf_kvs])
+        self._urdf_kv_mags = 0.9 * np.array([kv.detach().cpu().norm().item() for kv in urdf_kvs])
         self._mano_scale = 1.0
         self._cal_mags = []
         self._cal_frames = 30
