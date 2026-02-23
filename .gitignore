@@ -192,3 +192,18 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Third-party vendored libraries (not submodules)
+third_party/pyroki/
+
+# ML artifacts — model weights, training data, checkpoints
+*.pth
+*.pt
+*.onnx
+*.npy
+*.npz
+*.pkl
+*.pickle
+
+# STL mesh files (large binaries)
+*.stl
