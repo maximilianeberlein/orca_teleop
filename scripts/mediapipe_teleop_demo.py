@@ -20,6 +20,11 @@ def robot_control_process_worker(q, stop, ready, model_path):
         while not stop.is_set():
             try:
                 angles = q.get(timeout=0.1)
+                while not q.empty():
+                    try:
+                        angles = q.get_nowait()
+                    except Exception:
+                        break
                 if angles:
                     hand.set_joint_pos(urdf_angles_to_physical(angles))
             except Exception:

@@ -15,6 +15,12 @@ def _robot_control_worker(q, stop, ready, model_path):
         while not stop.is_set():
             try:
                 angles = q.get(timeout=0.1)
+                # Drain queue — only use the latest frame
+                while not q.empty():
+                    try:
+                        angles = q.get_nowait()
+                    except Exception:
+                        break
                 if angles:
                     hand.set_joint_pos(urdf_angles_to_physical(angles))
             except Exception:
