@@ -75,6 +75,9 @@ class URDFViewer:
         self._mano_visible = self._server.gui.add_checkbox(
             "Show MANO Points", initial_value=True,
         )
+        self._fk_visible = self._server.gui.add_checkbox(
+            "Show FK Points", initial_value=False,
+        )
         self._stop_button = self._server.gui.add_button("Stop")
 
         self._stopped = False
@@ -82,6 +85,8 @@ class URDFViewer:
         self._start_time = time.time()
         self._mano_points_handle = None
         self._mano_lines_handle = None
+        self._fk_points_handle = None
+        self._fk_lines_handle = None
 
         @self._stop_button.on_click
         def _(_):
@@ -140,6 +145,95 @@ class URDFViewer:
             points=line_points,
             colors=line_colors,
         )
+
+    def update_fk_points(self, points):
+        if not self._fk_visible.value:
+            if self._fk_points_handle is not None:
+                self._fk_points_handle.remove()
+                self._fk_points_handle = None
+            if self._fk_lines_handle is not None:
+                self._fk_lines_handle.remove()
+                self._fk_lines_handle = None
+            return
+
+        # points: (6, 3) = [thumb_tip, index_tip, middle_tip, ring_tip, pinky_tip, palm]
+        points = points.astype(np.float32)
+        colors = np.array([
+            [255, 0, 0],      # thumb: red
+            [0, 255, 0],      # index: green
+            [0, 0, 255],      # middle: blue
+            [255, 255, 0],    # ring: yellow
+            [255, 0, 255],    # pinky: magenta
+            [255, 255, 255],  # palm: white
+        ], dtype=np.uint8)
+
+        self._fk_points_handle = self._server.scene.add_point_cloud(
+            "/fk_points",
+            points=points,
+            colors=colors,
+            point_size=0.008,
+        )
+
+        # Draw lines from palm (index 5) to each fingertip (indices 0-4)
+        palm = points[5]
+        line_points = np.array([[palm, points[i]] for i in range(5)], dtype=np.float32)
+        line_colors = np.array([
+            [[255, 0, 0], [255, 0, 0]],
+            [[0, 255, 0], [0, 255, 0]],
+            [[0, 0, 255], [0, 0, 255]],
+            [[255, 255, 0], [255, 255, 0]],
+            [[255, 0, 255], [255, 0, 255]],
+        ], dtype=np.uint8)
+        self._fk_lines_handle = self._server.scene.add_line_segments(
+            "/fk_lines",
+            points=line_points,
+            colors=line_colors,
+        )
+
+    def add_calibration_controls(self, retargeter):
+        with self._server.gui.add_folder("Manual Calibration", expand_by_default=False) as folder:
+            tx = self._server.gui.add_slider("Translate X (m)", -0.05, 0.05, 0.001, 0.0)
+            ty = self._server.gui.add_slider("Translate Y (m)", -0.05, 0.05, 0.001, 0.0)
+            tz = self._server.gui.add_slider("Translate Z (m)", -0.05, 0.05, 0.001, 0.0)
+            rx = self._server.gui.add_slider("Roll (deg)", -30.0, 30.0, 0.5, 0.0)
+            ry = self._server.gui.add_slider("Pitch (deg)", -30.0, 30.0, 0.5, 0.0)
+            rz = self._server.gui.add_slider("Yaw (deg)", -30.0, 30.0, 0.5, 0.0)
+            scale = self._server.gui.add_slider("Scale", 0.5, 2.0, 0.01, 1.0)
+            reset_btn = self._server.gui.add_button("Reset")
+            print_btn = self._server.gui.add_button("Print Values")
+
+        def _sync_translation(_=None):
+            retargeter.manual_translation = np.array([tx.value, ty.value, tz.value])
+
+        def _sync_rotation(_=None):
+            retargeter.manual_rotation = np.array([rx.value, ry.value, rz.value])
+
+        def _sync_scale(_=None):
+            retargeter.manual_scale = scale.value
+
+        tx.on_update(_sync_translation)
+        ty.on_update(_sync_translation)
+        tz.on_update(_sync_translation)
+        rx.on_update(_sync_rotation)
+        ry.on_update(_sync_rotation)
+        rz.on_update(_sync_rotation)
+        scale.on_update(_sync_scale)
+
+        @reset_btn.on_click
+        def _(_):
+            tx.value = ty.value = tz.value = 0.0
+            rx.value = ry.value = rz.value = 0.0
+            scale.value = 1.0
+            _sync_translation()
+            _sync_rotation()
+            _sync_scale()
+
+        @print_btn.on_click
+        def _(_):
+            print(f"Manual calibration values:")
+            print(f"  translation: [{tx.value:.4f}, {ty.value:.4f}, {tz.value:.4f}]")
+            print(f"  rotation:    [{rx.value:.1f}, {ry.value:.1f}, {rz.value:.1f}]")
+            print(f"  scale:       {scale.value:.3f}")
 
     def close(self):
         self._server.stop()
