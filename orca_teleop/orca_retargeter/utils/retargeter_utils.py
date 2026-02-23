@@ -1,6 +1,47 @@
-from typing import Dict, Tuple, List, Union
+from typing import Dict, Tuple, List, Union, Optional
 import torch
 import numpy as np
+
+# MuJoCo ref offsets (radians): rotation baked into URDF joint origin rpy.
+# URDF θ=0 is at the CAD rest pose (partially curled); physical θ=0 (extended)
+# corresponds to URDF θ = -ref.  Conversion: physical = urdf + ref.
+JOINT_REF_OFFSETS_RAD = {
+    "thumb_mcp": 0.0,
+    "thumb_abd": 0.5235987755982988,
+    "thumb_pip": 0.8797634774823377,
+    "thumb_dip": -0.7853981633974483,
+    "index_abd": 0.2617993877991494,
+    "index_mcp": 0.6771877497737998,
+    "index_pip": 1.4556045961632709,
+    "middle_abd": 0.0039234544218759776,
+    "middle_mcp": 0.10122909661567112,
+    "middle_pip": 1.0471975511965976,
+    "ring_abd": 0.1064650843716541,
+    "ring_mcp": -0.21118483949131386,
+    "ring_pip": 0.6265732014659643,
+    "pinky_abd": -0.08726646259971647,
+    "pinky_mcp": -0.30194196059501904,
+    "pinky_pip": 0.6771877497737998,
+    "wrist": 0.0,
+}
+
+
+def get_ref_offsets_array(joint_ids):
+    """Return ref offsets as numpy array (radians) in the given joint order."""
+    return np.array([JOINT_REF_OFFSETS_RAD.get(jid, 0.0) for jid in joint_ids])
+
+
+FINGERTIP_OFFSETS = {
+    "thumb":  [0.0, 0.0, 0.0305],
+    "index":  [0.0, 0.0, 0.0433],
+    "middle": [0.0, 0.0, 0.0453],
+    "ring":   [0.0, 0.0, 0.0453],
+    "pinky":  [0.0, 0.0, 0.0383],
+}
+
+
+def get_fingertip_offset_tensors(fingers: List[str], device: str) -> Dict[str, torch.Tensor]:
+    return {f: torch.tensor([FINGERTIP_OFFSETS[f]], device=device) for f in fingers}
 
 def preprocess_avp_data(data: Dict, hand_type: str) -> Tuple[np.ndarray, float]:
     """Extract joint translations and wrist angle from Apple Vision Pro data dict."""
@@ -122,10 +163,13 @@ def extract_mano_fingertips_and_palm(joints: torch.Tensor, fingers: List[str], s
     return mano_fingertips, mano_palm
 
 
-def extract_orca_fingertips_and_palm(chain, urdfhand_joint_angles: torch.Tensor, optimization_frames: List[int], hand_type: str, fingers: List[str], root: torch.Tensor) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+def extract_orca_fingertips_and_palm(chain, urdfhand_joint_angles: torch.Tensor, optimization_frames: List[int], hand_type: str, fingers: List[str], root: torch.Tensor, fingertip_offsets: Optional[Dict[str, torch.Tensor]] = None) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
     """Extract fingertips and palm from Orca hand chain transforms for given fingers."""
     chain_transforms = chain.forward_kinematics(urdfhand_joint_angles, frame_indices=optimization_frames)
-    orca_fingertips = {finger: chain_transforms[get_fingertip_urdf_name(hand_type, finger)].transform_points(root) for finger in fingers}
+    orca_fingertips = {}
+    for finger in fingers:
+        pt = fingertip_offsets[finger] if fingertip_offsets and finger in fingertip_offsets else root
+        orca_fingertips[finger] = chain_transforms[get_fingertip_urdf_name(hand_type, finger)].transform_points(pt)
     # Calculate palm position (same way as MANO)
     orca_thumb_base = chain_transforms[get_finger_base_urdf_name(hand_type, "thumb")].transform_points(root)
     orca_pinky_base = chain_transforms[get_finger_base_urdf_name(hand_type, "pinky")].transform_points(root)
