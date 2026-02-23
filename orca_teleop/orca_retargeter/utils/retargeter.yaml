@@ -10,8 +10,8 @@ joint_regularizers:  # tuples (joint_name, zero_value, weight) for regularizing 
   - [ring_abd, 0, 0]
   - [pinky_abd, 0, 0]
   # Flexion → 0 (proximal-first hierarchy: PIP penalized 5x more than MCP)
+  - [thumb_cmc, 0, 0]
   - [thumb_mcp, 0, 0]
-  - [thumb_pip, 0, 0]
   - [thumb_dip, 0, 0]
   - [index_mcp, 0, 0]
   - [index_pip, 0, 0]

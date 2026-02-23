@@ -16,6 +16,8 @@ if _GEORT_ROOT not in sys.path:
 
 from geort.model import IKModel
 
+_GEORT_THUMB_RENAME = {"thumb_mcp": "thumb_cmc", "thumb_pip": "thumb_mcp"}
+
 
 class NeuralGeoRTRetargeter:
     """Neural retargeter using GeoRT's pre-trained IK model (single MLP forward pass)."""
@@ -36,8 +38,9 @@ class NeuralGeoRTRetargeter:
         self.joint_ids = hand.joint_ids
         self.urdf_joint_ids = [f"{hand.type}_{joint_id}" for joint_id in self.joint_ids]
         lower_limits, upper_limits = map(list, zip(*hand.joint_roms_dict.values()))
-        self.wrist_limit_lower = lower_limits[16]
-        self.wrist_limit_upper = upper_limits[16]
+        self.wrist_idx = self.joint_ids.index("wrist")
+        self.wrist_limit_lower = lower_limits[self.wrist_idx]
+        self.wrist_limit_upper = upper_limits[self.wrist_idx]
 
         # Load GeoRT config
         with open(geort_config, 'r') as f:
@@ -69,6 +72,7 @@ class NeuralGeoRTRetargeter:
         for geort_idx, geort_joint_name in enumerate(joint_order):
             # Strip hand prefix to get the bare joint id (e.g. "right_thumb_abd" -> "thumb_abd")
             bare_name = geort_joint_name.split("_", 1)[1] if geort_joint_name.startswith(("left_", "right_")) else geort_joint_name
+            bare_name = _GEORT_THUMB_RENAME.get(bare_name, bare_name)
             orca_idx = self.joint_ids.index(bare_name)
             self.geort_to_orca_indices.append(orca_idx)
 
@@ -155,7 +159,7 @@ class NeuralGeoRTRetargeter:
 
         # Wrist angle (handled separately, not part of GeoRT model)
         final_wrist_angle = np.clip(final_wrist_angle, self.wrist_limit_lower, self.wrist_limit_upper)
-        orca_angles[-1] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
+        orca_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
         self.target_angles = orca_angles
 
         # --- Visualization: transform mano points to URDF world frame (same as default Retargeter) ---

@@ -6,9 +6,9 @@ import numpy as np
 # URDF θ=0 is at the CAD rest pose (partially curled); physical θ=0 (extended)
 # corresponds to URDF θ = -ref.  Conversion: physical = urdf + ref.
 JOINT_REF_OFFSETS_RAD = {
-    "thumb_mcp": 0.0,
+    "thumb_cmc": 0.0,
     "thumb_abd": 0.5235987755982988,
-    "thumb_pip": 0.8797634774823377,
+    "thumb_mcp": 0.8797634774823377,
     "thumb_dip": -0.7853981633974483,
     "index_abd": 0.2617993877991494,
     "index_mcp": 0.6771877497737998,
@@ -29,6 +29,17 @@ JOINT_REF_OFFSETS_RAD = {
 def get_ref_offsets_array(joint_ids):
     """Return ref offsets as numpy array (radians) in the given joint order."""
     return np.array([JOINT_REF_OFFSETS_RAD.get(jid, 0.0) for jid in joint_ids])
+
+
+def urdf_angles_to_physical(angles_dict):
+    """Convert retargeter output dict (URDF-space radians, keyed by urdf_joint_id)
+    to physical-space degrees (keyed by bare joint_id) for robot control."""
+    result = {}
+    for urdf_name, urdf_rad in angles_dict.items():
+        bare_name = urdf_name.split('_', 1)[1] if urdf_name.startswith(('left_', 'right_')) else urdf_name
+        ref_rad = JOINT_REF_OFFSETS_RAD.get(bare_name, 0.0)
+        result[bare_name] = np.rad2deg(float(urdf_rad) + ref_rad)
+    return result
 
 
 FINGERTIP_OFFSETS = {
@@ -74,10 +85,8 @@ def preprocess_manus_data(data: Dict) -> Tuple[np.ndarray, float]:
     skeleton = data["skeleton"]  # (25, 7): x, y, z, qx, qy, qz, qw
     joints = skeleton[:, :3].copy()
     joints[:, 2] *= -1  # Negate Z to match retargeter curl convention
-    wrist_quat = skeleton[0, 3:7]  # qx, qy, qz, qw
-    rot_matrix = quaternion_to_rotation_matrix(wrist_quat)
-    _, wrist_angle, _ = compute_roll_pitch_yaw(rot_matrix)
-    return joints, np.rad2deg(wrist_angle)
+    wrist_angle = 0.0
+    return joints, wrist_angle
 
 
 def quaternion_to_rotation_matrix(q: np.ndarray) -> np.ndarray:

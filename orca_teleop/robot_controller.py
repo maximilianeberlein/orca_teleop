@@ -1,10 +1,10 @@
 import multiprocessing
-import numpy as np
 
 
 def _robot_control_worker(q, stop, ready, model_path):
     try:
         from orca_core import OrcaHand
+        from orca_teleop.orca_retargeter.utils.retargeter_utils import urdf_angles_to_physical
         hand = OrcaHand(model_path)
         success, message = hand.connect()
         if not success:
@@ -16,8 +16,7 @@ def _robot_control_worker(q, stop, ready, model_path):
             try:
                 angles = q.get(timeout=0.1)
                 if angles:
-                    joints = {n.split('_',1)[1] if n.startswith(('left_','right_')) else n: float(p) for n,p in angles.items()}
-                    hand.set_joint_pos({n: np.rad2deg(p) for n,p in joints.items()})
+                    hand.set_joint_pos(urdf_angles_to_physical(angles))
             except Exception:
                 continue
     except Exception as e:

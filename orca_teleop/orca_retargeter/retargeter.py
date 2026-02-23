@@ -11,10 +11,11 @@ from .utils.manual_calibration import apply_manual_calibration
 class Retargeter:
     """Retargeter class for Orca Hand to retarget MANO joint angles to Orca Hand joint angles."""
     
-    def __init__(self, model_path: Union[OrcaHand, str] = None, urdf_path: Union[str, None] = None, source: str = "none") -> None:
+    def __init__(self, model_path: Union[OrcaHand, str] = None, urdf_path: Union[str, None] = None, source: str = "none", verbose: bool = False) -> None:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.source = source
+        self.verbose = verbose
         self.target_angles = None
 
         if not os.path.exists(urdf_path):
@@ -30,9 +31,10 @@ class Retargeter:
         self.urdf_joint_ids = [f"{hand.type}_{joint_id}" for joint_id in self.joint_ids]
         self.fingers = ["thumb", "index", "middle", "ring", "pinky"]
         lower_limits, upper_limits = map(list, zip(*hand.joint_roms_dict.values()))
-        self.wrist_limit_lower = lower_limits[16]
-        self.wrist_limit_upper = upper_limits[16]
-        lower_limits[16] = upper_limits[16] = 0.0  # Keep wrist constrained to zero during optimization
+        self.wrist_idx = self.joint_ids.index("wrist")
+        self.wrist_limit_lower = lower_limits[self.wrist_idx]
+        self.wrist_limit_upper = upper_limits[self.wrist_idx]
+        lower_limits[self.wrist_idx] = upper_limits[self.wrist_idx] = 0.0  # Keep wrist constrained to zero during optimization
         ref_offsets_deg = np.rad2deg(retargeter_utils.get_ref_offsets_array(self.joint_ids))
         lower_limits_urdf = np.array(lower_limits) - ref_offsets_deg
         upper_limits_urdf = np.array(upper_limits) - ref_offsets_deg
@@ -172,7 +174,7 @@ class Retargeter:
         if len(self._calibration_mags) < self._calibration_frames:
             zero_angles = np.zeros(len(self.urdf_joint_ids))
             final_wrist_angle = np.clip(final_wrist_angle, self.wrist_limit_lower, self.wrist_limit_upper)
-            zero_angles[-1] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
+            zero_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
             self.target_angles = zero_angles
             self.mano_points = retargeter_utils.rotate_points_around_y(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
             return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, zero_angles)}
@@ -180,11 +182,11 @@ class Retargeter:
         optimized_angles = self.optimize_orcahand_joint_angles(manohand_joint_pos)
 
         self._frame_count += 1
-        if self._frame_count % 60 == 1:
+        if self.verbose and self._frame_count % 60 == 1:
             for finger in self.fingers:
                 abd = f"{finger}_abd" if finger != "thumb" else "thumb_abd"
-                mcp = f"{finger}_mcp" if finger != "thumb" else "thumb_mcp"
-                pip = f"{finger}_pip" if finger != "thumb" else "thumb_pip"
+                mcp = f"{finger}_mcp" if finger != "thumb" else "thumb_cmc"
+                pip = f"{finger}_pip" if finger != "thumb" else "thumb_mcp"
                 a = optimized_angles[self.joint_ids.index(abd)] if abd in self.joint_ids else 0
                 m = optimized_angles[self.joint_ids.index(mcp)]
                 p = optimized_angles[self.joint_ids.index(pip)]
@@ -192,7 +194,7 @@ class Retargeter:
 
         # Wrist angle is inverted for right hand due to URDF inconsistency, should be fixed/standardized in future URDF update
         final_wrist_angle = np.clip(final_wrist_angle, self.wrist_limit_lower, self.wrist_limit_upper)
-        optimized_angles[-1] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
+        optimized_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
         self.target_angles = optimized_angles
 
         # Compute FK fingertip positions (with offsets) + palm for visualization

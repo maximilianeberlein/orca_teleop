@@ -26,7 +26,7 @@ def main():
 
     sliders = {}
     finger_groups = {
-        "Thumb": ["thumb_mcp", "thumb_abd", "thumb_pip", "thumb_dip"],
+        "Thumb": ["thumb_cmc", "thumb_abd", "thumb_mcp", "thumb_dip"],
         "Index": ["index_abd", "index_mcp", "index_pip"],
         "Middle": ["middle_abd", "middle_mcp", "middle_pip"],
         "Ring": ["ring_abd", "ring_mcp", "ring_pip"],
@@ -63,11 +63,11 @@ def main():
                 s.value = 90.0
             elif "pip" in jid and "thumb" not in jid:
                 s.value = 60.0
-            elif jid == "thumb_pip":
+            elif jid == "thumb_mcp":
                 s.value = 60.0
             elif jid == "thumb_dip":
                 s.value = -60.0
-            elif jid == "thumb_mcp":
+            elif jid == "thumb_cmc":
                 s.value = -40.0
             elif "abd" in jid:
                 s.value = 0.0
@@ -78,8 +78,8 @@ def main():
     def _(_):
         for s in sliders.values():
             s.value = 0.0
-        if "thumb_pip" in sliders:
-            sliders["thumb_pip"].value = 40.0
+        if "thumb_mcp" in sliders:
+            sliders["thumb_mcp"].value = 40.0
         if "thumb_dip" in sliders:
             sliders["thumb_dip"].value = -40.0
         if "index_mcp" in sliders:
