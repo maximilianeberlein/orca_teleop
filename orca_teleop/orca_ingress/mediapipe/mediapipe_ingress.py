@@ -45,6 +45,7 @@ class MediaPipeIngress:
         self.cap = cv2.VideoCapture(0)
         if not self.cap.isOpened():
             raise RuntimeError("Failed to open webcam")
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         self.latest_frame = None
         self.latest_image_landmarks = None
@@ -114,7 +115,6 @@ class MediaPipeIngress:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
             self.landmarker.detect_async(mp_image, int(time.time() * 1000))
-            time.sleep(1.0/30.0)
     
     
     def start(self):
@@ -136,27 +136,26 @@ class MediaPipeIngress:
         with self.frame_lock:
             if self.latest_frame is None:
                 return
-                
             frame = self.latest_frame.copy()
+            image_landmarks = self.latest_image_landmarks
+            orientation_good = self.orientation_good
 
-            if self.latest_image_landmarks:
-                proto = landmark_pb2.NormalizedLandmarkList()
-                for lm in self.latest_image_landmarks:
-                    new_lm = proto.landmark.add()
-                    new_lm.x, new_lm.y, new_lm.z = lm.x, lm.y, lm.z
-                
-                # Choose color of mano skeleton based on orientation and distance
-                if self.orientation_good:
-                    landmark_style = mp.solutions.drawing_styles.get_default_hand_landmarks_style()
-                    connection_style = mp.solutions.drawing_styles.get_default_hand_connections_style()
-                else:
-                    landmark_style = connection_style = mp.solutions.drawing_utils.DrawingSpec(color=(128, 128, 128), thickness=2, circle_radius=2)
-                
-                mp.solutions.drawing_utils.draw_landmarks(frame, proto, mp.solutions.hands.HAND_CONNECTIONS, 
-                                             landmark_style, connection_style)
-            
-            cv2.imshow('MediaPipe Hand Tracking', frame)
-            cv2.waitKey(1)
+        if image_landmarks:
+            proto = landmark_pb2.NormalizedLandmarkList()
+            for lm in image_landmarks:
+                new_lm = proto.landmark.add()
+                new_lm.x, new_lm.y, new_lm.z = lm.x, lm.y, lm.z
+
+            if orientation_good:
+                landmark_style = mp.solutions.drawing_styles.get_default_hand_landmarks_style()
+                connection_style = mp.solutions.drawing_styles.get_default_hand_connections_style()
+            else:
+                landmark_style = connection_style = mp.solutions.drawing_utils.DrawingSpec(color=(128, 128, 128), thickness=2, circle_radius=2)
+
+            mp.solutions.drawing_utils.draw_landmarks(frame, proto, mp.solutions.hands.HAND_CONNECTIONS,
+                                         landmark_style, connection_style)
+
+        cv2.imshow('MediaPipe Hand Tracking', frame)
     
     def cleanup(self):
         """Release resources."""
@@ -167,7 +166,13 @@ class MediaPipeIngress:
 
 def main():
     """Standalone demo."""
-    ingress = MediaPipeIngress(callback=lambda lm: print(f"Landmarks: {lm.shape}"))
+    import argparse
+    parser = argparse.ArgumentParser(description='Standalone MediaPipe hand tracking demo')
+    parser.add_argument('model_path', help='Path to OrcaHand model directory')
+    args = parser.parse_args()
+
+    ingress = MediaPipeIngress(model_path=args.model_path,
+                               callback=lambda lm: print(f"Landmarks: {lm.shape}"))
 
     try:
         ingress.start()
