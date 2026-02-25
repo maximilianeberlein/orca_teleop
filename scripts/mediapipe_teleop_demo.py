@@ -6,10 +6,14 @@ import argparse
 from orca_teleop import MediaPipeIngress, Retargeter
 
 
-def robot_control_process_worker(q, stop, ready, model_path):
+def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
     try:
         from orca_core import OrcaHand
         from orca_teleop.orca_retargeter.utils.retargeter_utils import urdf_angles_to_physical
+        ref_offsets = None
+        if urdf_path is not None:
+            from orca_teleop.orca_retargeter.utils.urdf_renamer import load_ref_offsets
+            ref_offsets = load_ref_offsets(urdf_path)
         hand = OrcaHand(model_path)
         success, message = hand.connect()
         if not success:
@@ -26,7 +30,7 @@ def robot_control_process_worker(q, stop, ready, model_path):
                     except Exception:
                         break
                 if angles:
-                    hand.set_joint_pos(urdf_angles_to_physical(angles))
+                    hand.set_joint_pos(urdf_angles_to_physical(angles, ref_offsets))
             except Exception:
                 continue
     except Exception as e:
@@ -111,7 +115,7 @@ def main():
         robot_ready_event = multiprocessing.Event()
         robot_control_process = multiprocessing.Process(
             target=robot_control_process_worker,
-            args=(angles_queue, stop_robot_control, robot_ready_event, args.model_path), daemon=True)
+            args=(angles_queue, stop_robot_control, robot_ready_event, args.model_path, args.urdf_path), daemon=True)
 
         robot_control_process.start()
         if not robot_ready_event.wait(timeout=5.0):

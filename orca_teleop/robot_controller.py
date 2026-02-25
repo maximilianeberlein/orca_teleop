@@ -1,10 +1,14 @@
 import multiprocessing
 
 
-def _robot_control_worker(q, stop, ready, model_path):
+def _robot_control_worker(q, stop, ready, model_path, urdf_path=None):
     try:
         from orca_core import OrcaHand
         from orca_teleop.orca_retargeter.utils.retargeter_utils import urdf_angles_to_physical
+        ref_offsets = None
+        if urdf_path is not None:
+            from orca_teleop.orca_retargeter.utils.urdf_renamer import load_ref_offsets
+            ref_offsets = load_ref_offsets(urdf_path)
         hand = OrcaHand(model_path)
         success, message = hand.connect()
         if not success:
@@ -22,7 +26,7 @@ def _robot_control_worker(q, stop, ready, model_path):
                     except Exception:
                         break
                 if angles:
-                    hand.set_joint_pos(urdf_angles_to_physical(angles))
+                    hand.set_joint_pos(urdf_angles_to_physical(angles, ref_offsets))
             except Exception:
                 continue
     except Exception as e:
@@ -36,8 +40,9 @@ def _robot_control_worker(q, stop, ready, model_path):
 
 
 class RobotController:
-    def __init__(self, model_path, ready_timeout=5.0):
+    def __init__(self, model_path, urdf_path=None, ready_timeout=5.0):
         self._model_path = model_path
+        self._urdf_path = urdf_path
         self._ready_timeout = ready_timeout
         self._process = None
         self._queue = None
@@ -49,7 +54,7 @@ class RobotController:
         ready_event = multiprocessing.Event()
         self._process = multiprocessing.Process(
             target=_robot_control_worker,
-            args=(self._queue, self._stop_event, ready_event, self._model_path),
+            args=(self._queue, self._stop_event, ready_event, self._model_path, self._urdf_path),
             daemon=True)
         self._process.start()
         if not ready_event.wait(timeout=self._ready_timeout):
