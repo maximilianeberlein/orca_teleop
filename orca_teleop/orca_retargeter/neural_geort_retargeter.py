@@ -122,7 +122,7 @@ class NeuralGeoRTRetargeter:
         """Get fingertip landmark indices per source, in config's finger order."""
         mediapipe_tips = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
         manus_tips = {"thumb": 24, "index": 4, "middle": 9, "ring": 19, "pinky": 14}
-        tip_map = manus_tips if self.source == "manus" else mediapipe_tips
+        tip_map = manus_tips if self.source == "manus" else mediapipe_tips  # multicam uses same 21-point layout
         return [tip_map[name] for name in finger_names]
 
     def retarget(self, data: np.ndarray, manual_wrist_angle: Union[float, None] = None) -> Dict[str, float]:
@@ -131,6 +131,8 @@ class NeuralGeoRTRetargeter:
             joints, computed_wrist_angle = retargeter_utils.preprocess_avp_data(data, self.hand_type)
         elif self.source == "mediapipe":
             joints, computed_wrist_angle = retargeter_utils.preprocess_mediapipe_data(data)
+        elif self.source == "multicam":
+            joints, computed_wrist_angle = retargeter_utils.preprocess_multicam_data(data)
         elif self.source == "manus":
             joints, computed_wrist_angle = retargeter_utils.preprocess_manus_data(data)
         else:

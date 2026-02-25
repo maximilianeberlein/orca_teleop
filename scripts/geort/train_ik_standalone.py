@@ -49,7 +49,7 @@ def main():
     parser.add_argument("--w-chamfer", type=float, default=80.0)
     parser.add_argument("--w-curvature", type=float, default=0.1)
     parser.add_argument("--w-pinch", type=float, default=1.0)
-    parser.add_argument("--source", type=str, default="manus", choices=["manus", "mediapipe"],
+    parser.add_argument("--source", type=str, default="manus", choices=["manus", "mediapipe", "multicam"],
                         help="Source type that collected the human data (determines fingertip indices)")
     args = parser.parse_args()
 
@@ -73,6 +73,7 @@ def main():
     FINGERTIP_INDICES = {
         "manus": {"thumb": 24, "index": 4, "middle": 9, "ring": 19, "pinky": 14},
         "mediapipe": {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20},
+        "multicam": {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20},
     }
     tip_map = FINGERTIP_INDICES[args.source]
     human_ids = [tip_map[name] for name in finger_names]

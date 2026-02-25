@@ -85,8 +85,17 @@ def preprocess_mediapipe_data(data: Dict) -> Tuple[np.ndarray, float]:
     """Extract joint positions from MediaPipe landmarks (assumes 21 MANO points)."""
 
     landmarks = data["hand_landmarks"]
-    joints = landmarks * 1.2
+    joints = landmarks.copy()
     wrist_angle = 0.0  # Default to no rotation for MediaPipe
+    return joints, wrist_angle
+
+
+def preprocess_multicam_data(data: Dict) -> Tuple[np.ndarray, float]:
+    """Extract joint positions from multicam triangulated landmarks (21 MANO points)."""
+
+    landmarks = data["hand_landmarks"]
+    joints = landmarks.copy()
+    wrist_angle = 0.0
     return joints, wrist_angle
 
 
@@ -133,7 +142,10 @@ def compute_roll_pitch_yaw(rotation_matrix: np.ndarray) -> Tuple[float, float, f
 
 def get_mano_joints_dict(joints: torch.Tensor, source: str):
     """Return MANO joint dictionary (wrist, thumb, index, middle, ring, pinky) based on source."""
-    
+
+    if source == "multicam":
+        source = "mediapipe"
+
     if source == "mediapipe":
         # MediaPipe structure
         return {

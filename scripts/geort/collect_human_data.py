@@ -28,6 +28,7 @@ from orca_teleop.orca_retargeter.utils import retargeter_utils
 # Fingertip indices per source (used for viewer highlights)
 FINGERTIP_INDICES = {
     "mediapipe": [4, 8, 12, 16, 20],
+    "multicam": [4, 8, 12, 16, 20],
     "manus": [24, 4, 9, 19, 14],
 }
 
@@ -135,8 +136,8 @@ def _start_viewer(source, hand_config_name):
                     position=palm_pts[tip_idx].astype(np.float32),
                 )
 
-        # Draw hand skeleton lines (only for MediaPipe 21-point layout)
-        if source == "mediapipe" and n_pts >= 21:
+        # Draw hand skeleton lines (only for MediaPipe/multicam 21-point layout)
+        if source in ("mediapipe", "multicam") and n_pts >= 21:
             connections = [
                 (0, 1), (1, 2), (2, 3), (3, 4),
                 (0, 5), (5, 6), (6, 7), (7, 8),
@@ -161,7 +162,7 @@ def _start_viewer(source, hand_config_name):
 
 def main():
     parser = argparse.ArgumentParser(description="Collect human hand data for GeoRT training")
-    parser.add_argument("--source", type=str, required=True, choices=["mediapipe", "manus"],
+    parser.add_argument("--source", type=str, required=True, choices=["mediapipe", "multicam", "manus"],
                         help="Input source type")
     parser.add_argument("--name", type=str, default="human_data",
                         help="Dataset name (saved to third_party/GeoRT/data/<name>.npy)")
@@ -178,6 +179,15 @@ def main():
                         help="Manus glove hex ID (required for --source manus)")
     parser.add_argument("--zmq-addr", type=str, default="tcp://localhost:8000",
                         help="ZMQ address for Manus SDK stream")
+    # Multicam-specific args
+    parser.add_argument("--camera-indices", type=int, nargs="+", default=None,
+                        help="Camera /dev/video indices (for --source multicam)")
+    parser.add_argument("--calibration-dir", type=str, default="calibration/",
+                        help="Directory with cam_N_intrinsics.json files (for --source multicam)")
+    parser.add_argument("--marker-size", type=float, default=0.022,
+                        help="ArUco marker side length in meters (for --source multicam)")
+    parser.add_argument("--marker-id", type=int, default=20,
+                        help="ArUco marker ID (for --source multicam)")
     args = parser.parse_args()
 
     # Start viewer
@@ -208,6 +218,8 @@ def main():
         nonlocal recording
         if args.source == "mediapipe":
             joints, _ = retargeter_utils.preprocess_mediapipe_data({"hand_landmarks": data})
+        elif args.source == "multicam":
+            joints, _ = retargeter_utils.preprocess_multicam_data({"hand_landmarks": data})
         elif args.source == "manus":
             joints, _ = retargeter_utils.preprocess_manus_data(data)
         canonical = retargeter_utils.to_geort_canonical_frame(joints, args.source)
@@ -235,6 +247,33 @@ def main():
     if args.source == "mediapipe":
         from orca_teleop import MediaPipeIngress
         ingress = MediaPipeIngress(args.model_path, callback=on_landmarks)
+    elif args.source == "multicam":
+        from orca_teleop.orca_ingress.multicam import MultiCamIngress
+        if args.camera_indices is None:
+            import cv2
+            args.camera_indices = []
+            for i in range(10):
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    args.camera_indices.append(i)
+                    cap.release()
+            if len(args.camera_indices) < 2:
+                print(f"Error: need at least 2 cameras, found {len(args.camera_indices)}")
+                return
+            print(f"Auto-detected cameras: {args.camera_indices}")
+        ingress = MultiCamIngress(
+            model_path=args.model_path,
+            camera_indices=args.camera_indices,
+            calibration_dir=args.calibration_dir,
+            marker_size_m=args.marker_size,
+            marker_id=args.marker_id,
+            callback=on_landmarks,
+        )
+        print("Starting extrinsic calibration...")
+        if not ingress.calibrate_extrinsics():
+            print("Extrinsic calibration aborted.")
+            ingress.cleanup()
+            return
     elif args.source == "manus":
         if not args.glove_id:
             parser.error("--glove-id is required for manus source")

@@ -136,8 +136,12 @@ def main():
     parser.add_argument('--no-robot', action='store_true')
     parser.add_argument('--manual-calib', action='store_true',
                         help='Enable manual calibration sliders in viewer')
-    parser.add_argument('--retargeter', choices=['default', 'absolute', 'geort', 'pyroki'],
+    parser.add_argument('--retargeter', choices=['default', 'absolute', 'geort', 'neural-geort', 'pyroki'],
                         default='default')
+    parser.add_argument('--geort-checkpoint', type=str, default=None,
+                        help='Path to GeoRT IK model checkpoint (.pth)')
+    parser.add_argument('--geort-config', type=str, default=None,
+                        help='Path to GeoRT config JSON (with joint limits)')
     parser.add_argument('--no-reproj-filter', action='store_true',
                         help='Disable reprojection error refinement')
     parser.add_argument('--jitter-weight', action='store_true',
@@ -170,17 +174,25 @@ def main():
         except Exception as e:
             print(f"Failed to start viewer: {e}")
 
-    if args.retargeter == 'absolute':
+    if args.retargeter == 'neural-geort':
+        if not args.geort_checkpoint or not args.geort_config:
+            print("Error: --geort-checkpoint and --geort-config required for neural-geort retargeter")
+            return 1
+        from orca_teleop import NeuralGeoRTRetargeter
+        retargeter = NeuralGeoRTRetargeter(args.model_path, args.urdf_path,
+                                           geort_checkpoint=args.geort_checkpoint,
+                                           geort_config=args.geort_config, source="multicam")
+    elif args.retargeter == 'absolute':
         from orca_teleop import AbsoluteRetargeter
-        retargeter = AbsoluteRetargeter(args.model_path, args.urdf_path, source="mediapipe")
+        retargeter = AbsoluteRetargeter(args.model_path, args.urdf_path, source="multicam")
     elif args.retargeter == 'geort':
         from orca_teleop import GeoRTRetargeter
-        retargeter = GeoRTRetargeter(args.model_path, args.urdf_path, source="mediapipe")
+        retargeter = GeoRTRetargeter(args.model_path, args.urdf_path, source="multicam")
     elif args.retargeter == 'pyroki':
         from orca_teleop import PyRoKIRetargeter
-        retargeter = PyRoKIRetargeter(args.model_path, args.urdf_path, source="mediapipe")
+        retargeter = PyRoKIRetargeter(args.model_path, args.urdf_path, source="multicam")
     else:
-        retargeter = Retargeter(args.model_path, args.urdf_path, source="mediapipe")
+        retargeter = Retargeter(args.model_path, args.urdf_path, source="multicam")
 
     if args.manual_calib and viewer:
         viewer.add_calibration_controls(retargeter)

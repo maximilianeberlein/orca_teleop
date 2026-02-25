@@ -373,6 +373,8 @@ class PyRoKIRetargeter:
             joints, computed_wrist_angle = retargeter_utils.preprocess_avp_data(data, self.hand_type)
         elif self.source == "mediapipe":
             joints, computed_wrist_angle = retargeter_utils.preprocess_mediapipe_data(data)
+        elif self.source == "multicam":
+            joints, computed_wrist_angle = retargeter_utils.preprocess_multicam_data(data)
         elif self.source == "manus":
             joints, computed_wrist_angle = retargeter_utils.preprocess_manus_data(data)
         else:
