@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-viewer = ["viser>=0.2.0"]
+viewer = ["viser>=0.2.0", "yourdfpy"]
 pyroki = ["jaxls", "yourdfpy", "jax-dataclasses", "jaxlie"]  # also requires pyroki from source: pip install -e third_party/pyroki
 geort-train = ["sapien", "open3d", "trimesh", "tqdm"]
 

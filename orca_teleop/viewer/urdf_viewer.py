@@ -1,4 +1,5 @@
 import re
+import socket
 import time
 import webbrowser
 from pathlib import Path
@@ -57,7 +58,15 @@ def _package_uri_handler(fname, dir):
 
 
 class URDFViewer:
-    def __init__(self, urdf_path, port=8080):
+    def __init__(self, urdf_path, port=8080, open_browser=True):
+        # Check if something is already listening (e.g. a stale browser tab from a previous run)
+        _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            port_was_open = _sock.connect_ex(("localhost", port)) == 0
+        finally:
+            _sock.close()
+
+        self._open_browser = open_browser
         self._server = viser.ViserServer(port=port)
         urdf_dir = Path(urdf_path).parent
         urdf = yourdfpy.URDF.load(
@@ -101,7 +110,8 @@ class URDFViewer:
             if self._has_connected and len(self._server.get_clients()) == 0 and time.time() - self._start_time > 3.0:
                 self._stopped = True
 
-        webbrowser.open(f"http://localhost:{port}")
+        if not port_was_open and self._open_browser:
+            webbrowser.open(f"http://localhost:{port}")
 
     @property
     def stopped(self):
