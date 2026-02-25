@@ -382,19 +382,21 @@ class MultiCamIngress:
                 # Too many NaN or no previous data — drop frame
                 return
 
-        # Velocity-cap outlier rejection: clamp landmarks that jumped too far
-        # (catches phantom points from temporal camera misalignment)
+        # Rate-limited outlier rejection: cap per-frame movement to 4cm
+        # but always advance toward the target (avoids permanent stuck state)
         if self._prev_points_3d is not None:
-            delta = np.linalg.norm(points_3d - self._prev_points_3d, axis=1)
-            outlier = delta > 0.04  # 4cm/frame → ~3.6 m/s at 90Hz
-            points_3d[outlier] = self._prev_points_3d[outlier]
+            diff = points_3d - self._prev_points_3d
+            delta = np.linalg.norm(diff, axis=1, keepdims=True)
+            max_step = 0.04  # 4cm/frame → ~3.6 m/s at 90Hz
+            scale = np.minimum(1.0, max_step / np.maximum(delta, 1e-8))
+            points_3d = self._prev_points_3d + diff * scale
 
         t0 = time.perf_counter()
         # One Euro Filter for temporal smoothing (NaN-safe: see one_euro_filter.py)
         if self.use_temporal_filter:
             if self._euro_filter is None:
                 self._euro_filter = OneEuroFilter(
-                    min_cutoff=1.0, beta=1.5, d_cutoff=1.0
+                    min_cutoff=1.0, beta=1.5, d_cutoff=5.0
                 )
             points_3d = self._euro_filter(points_3d, now)
         t_filter = time.perf_counter() - t0
