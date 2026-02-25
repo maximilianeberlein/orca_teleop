@@ -5,6 +5,10 @@ import cv2
 import argparse
 from orca_teleop import MediaPipeIngress, Retargeter
 
+debug_timing = False
+_timing_accum = {"retarget": 0.0, "viewer": 0.0, "total": 0.0}
+_timing_count = 0
+
 
 def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
     try:
@@ -44,17 +48,45 @@ def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
 
 
 def process_landmarks(landmarks):
+    global _timing_accum, _timing_count
+    t_total = time.perf_counter()
+
+    t0 = time.perf_counter()
     angles = retargeter.retarget({"hand_landmarks": landmarks})
+    t_retarget = time.perf_counter() - t0
+
     if angles_queue:
         angles_queue.put_nowait(angles)
+
+    t0 = time.perf_counter()
     if viewer:
         viewer.update(angles)
         if show_mano and retargeter.mano_points is not None:
             viewer.update_mano_points(retargeter.mano_points)
+        if hasattr(retargeter, 'fk_points') and retargeter.fk_points is not None:
+            viewer.update_fk_points(retargeter.fk_points)
+    t_viewer = time.perf_counter() - t0
+
+    t_total_elapsed = time.perf_counter() - t_total
+
+    if debug_timing:
+        _timing_accum["retarget"] += t_retarget
+        _timing_accum["viewer"] += t_viewer
+        _timing_accum["total"] += t_total_elapsed
+        _timing_count += 1
+        if _timing_count >= 30:
+            n = _timing_count
+            print(
+                f"[retarget] retarget={_timing_accum['retarget']/n*1000:.1f}ms "
+                f"viewer={_timing_accum['viewer']/n*1000:.1f}ms "
+                f"total={_timing_accum['total']/n*1000:.1f}ms ({n} frames avg)"
+            )
+            _timing_accum = {k: 0.0 for k in _timing_accum}
+            _timing_count = 0
 
 
 def main():
-    global retargeter, angles_queue, viewer, show_mano
+    global retargeter, angles_queue, viewer, show_mano, debug_timing
     parser = argparse.ArgumentParser(description='MediaPipe to Orca Hand teleop demo')
     parser.add_argument('model_path')
     parser.add_argument('urdf_path')
@@ -66,8 +98,10 @@ def main():
     parser.add_argument('--retargeter', choices=['default', 'absolute', 'geort', 'neural-geort', 'pyroki'], default='default', help='Retargeter to use')
     parser.add_argument('--geort-checkpoint', type=str, default=None, help='Path to GeoRT IK model checkpoint (.pth)')
     parser.add_argument('--geort-config', type=str, default=None, help='Path to GeoRT config JSON (with joint limits)')
+    parser.add_argument('--debug-timing', action='store_true', help='Print per-stage timing breakdown every 30 frames')
     args = parser.parse_args()
     show_mano = args.show_mano or args.manual_calib
+    debug_timing = args.debug_timing
 
     viewer = None
     if not args.no_viewer:

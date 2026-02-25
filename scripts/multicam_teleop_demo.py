@@ -14,12 +14,9 @@ Usage:
 
 import sys
 import time
-import queue
-import threading
 import multiprocessing
 import cv2
 import argparse
-from orca_teleop import Retargeter
 from orca_teleop.orca_ingress.multicam import MultiCamIngress
 
 
@@ -60,27 +57,65 @@ def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
             pass
 
 
-retarget_queue = queue.Queue()
-debug_timing = False
+def retarget_process_worker(landmark_queue, angles_queue, stop_event, viewer_stopped_event,
+                            model_path, urdf_path, retargeter_type, geort_checkpoint, geort_config,
+                            enable_viewer, manual_calib, do_debug_timing):
+    """Retarget process: owns the retargeter and viewer, runs in its own process to avoid GIL."""
+    import time
+    import queue
 
+    # Create retargeter inside this process (avoids pickling torch objects)
+    if retargeter_type == 'neural-geort':
+        from orca_teleop import NeuralGeoRTRetargeter
+        retargeter = NeuralGeoRTRetargeter(model_path, urdf_path,
+                                           geort_checkpoint=geort_checkpoint,
+                                           geort_config=geort_config, source="multicam")
+    elif retargeter_type == 'absolute':
+        from orca_teleop import AbsoluteRetargeter
+        retargeter = AbsoluteRetargeter(model_path, urdf_path, source="multicam")
+    elif retargeter_type == 'geort':
+        from orca_teleop import GeoRTRetargeter
+        retargeter = GeoRTRetargeter(model_path, urdf_path, source="multicam")
+    elif retargeter_type == 'pyroki':
+        from orca_teleop import PyRoKIRetargeter
+        retargeter = PyRoKIRetargeter(model_path, urdf_path, source="multicam")
+    else:
+        from orca_teleop import Retargeter
+        retargeter = Retargeter(model_path, urdf_path, source="multicam")
 
-def process_landmarks(landmarks):
-    retarget_queue.put(landmarks)
+    viewer = None
+    if enable_viewer:
+        try:
+            from orca_teleop.viewer import URDFViewer
+            viewer = URDFViewer(urdf_path, open_browser=False)
+            print(f"URDF viewer started at http://localhost:8080")
+        except ImportError:
+            print("viser not installed — skipping 3D viewer")
+        except Exception as e:
+            print(f"Failed to start viewer: {e}")
 
+    if manual_calib and viewer:
+        viewer.add_calibration_controls(retargeter)
 
-def retarget_worker(stop_event):
+    retargeter.enable_viz = (viewer is not None)
+
     timing_accum = {"retarget": 0.0, "viewer": 0.0, "total": 0.0}
     timing_count = 0
+
     while not stop_event.is_set():
+        if viewer and viewer.stopped:
+            viewer_stopped_event.set()
+            break
+
         try:
-            landmarks = retarget_queue.get(timeout=0.05)
-        except queue.Empty:
+            landmarks = landmark_queue.get(timeout=0.05)
+        except (queue.Empty, EOFError):
             continue
         # Drain to latest frame
-        while not retarget_queue.empty():
+        while True:
             try:
-                landmarks = retarget_queue.get_nowait()
-            except queue.Empty:
+                landmarks = landmark_queue.get_nowait()
+            except (queue.Empty, EOFError):
                 break
 
         t_total = time.perf_counter()
@@ -89,8 +124,11 @@ def retarget_worker(stop_event):
         angles = retargeter.retarget({"hand_landmarks": landmarks})
         t_retarget = time.perf_counter() - t0
 
-        if angles_queue:
-            angles_queue.put_nowait(angles)
+        if angles_queue is not None:
+            try:
+                angles_queue.put_nowait(angles)
+            except Exception:
+                pass
 
         t0 = time.perf_counter()
         if viewer:
@@ -103,7 +141,7 @@ def retarget_worker(stop_event):
 
         t_total_elapsed = time.perf_counter() - t_total
 
-        if debug_timing:
+        if do_debug_timing:
             timing_accum["retarget"] += t_retarget
             timing_accum["viewer"] += t_viewer
             timing_accum["total"] += t_total_elapsed
@@ -118,9 +156,11 @@ def retarget_worker(stop_event):
                 timing_accum = {k: 0.0 for k in timing_accum}
                 timing_count = 0
 
+    if viewer:
+        viewer.close()
+
 
 def main():
-    global retargeter, angles_queue, viewer, debug_timing
     parser = argparse.ArgumentParser(description='Multi-camera triangulation teleop demo')
     parser.add_argument('model_path')
     parser.add_argument('urdf_path')
@@ -154,7 +194,9 @@ def main():
                         help='Disable orientation-based per-camera weighting')
     args = parser.parse_args()
 
-    debug_timing = args.debug_timing
+    if args.retargeter == 'neural-geort' and (not args.geort_checkpoint or not args.geort_config):
+        print("Error: --geort-checkpoint and --geort-config required for neural-geort retargeter")
+        return 1
 
     if args.camera_indices is None:
         args.camera_indices = _auto_detect_cameras()
@@ -163,39 +205,11 @@ def main():
             return 1
         print(f"Auto-detected cameras: {args.camera_indices}")
 
-    viewer = None
-    if not args.no_viewer:
-        try:
-            from orca_teleop.viewer import URDFViewer
-            viewer = URDFViewer(args.urdf_path, open_browser=False)
-            print(f"URDF viewer started at http://localhost:8080")
-        except ImportError:
-            print("viser not installed — skipping 3D viewer")
-        except Exception as e:
-            print(f"Failed to start viewer: {e}")
+    # Landmark queue: ingress (main process) → retarget process
+    landmark_queue = multiprocessing.Queue()
 
-    if args.retargeter == 'neural-geort':
-        if not args.geort_checkpoint or not args.geort_config:
-            print("Error: --geort-checkpoint and --geort-config required for neural-geort retargeter")
-            return 1
-        from orca_teleop import NeuralGeoRTRetargeter
-        retargeter = NeuralGeoRTRetargeter(args.model_path, args.urdf_path,
-                                           geort_checkpoint=args.geort_checkpoint,
-                                           geort_config=args.geort_config, source="multicam")
-    elif args.retargeter == 'absolute':
-        from orca_teleop import AbsoluteRetargeter
-        retargeter = AbsoluteRetargeter(args.model_path, args.urdf_path, source="multicam")
-    elif args.retargeter == 'geort':
-        from orca_teleop import GeoRTRetargeter
-        retargeter = GeoRTRetargeter(args.model_path, args.urdf_path, source="multicam")
-    elif args.retargeter == 'pyroki':
-        from orca_teleop import PyRoKIRetargeter
-        retargeter = PyRoKIRetargeter(args.model_path, args.urdf_path, source="multicam")
-    else:
-        retargeter = Retargeter(args.model_path, args.urdf_path, source="multicam")
-
-    if args.manual_calib and viewer:
-        viewer.add_calibration_controls(retargeter)
+    def process_landmarks(landmarks):
+        landmark_queue.put_nowait(landmarks)
 
     ingress = MultiCamIngress(
         model_path=args.model_path,
@@ -217,12 +231,12 @@ def main():
         ingress.cleanup()
         return 1
 
+    # Robot control process
     robot_control_process = None
     stop_robot_control = None
     angles_queue = None
 
     if not args.no_robot:
-        from orca_core import OrcaHand
         angles_queue = multiprocessing.Queue()
         stop_robot_control = multiprocessing.Event()
         robot_ready_event = multiprocessing.Event()
@@ -238,9 +252,18 @@ def main():
             ingress.cleanup()
             return 1
 
-    stop_retarget = threading.Event()
-    retarget_thread = threading.Thread(target=retarget_worker, args=(stop_retarget,), daemon=True)
-    retarget_thread.start()
+    # Retarget process: owns retargeter + viewer, eliminates GIL contention
+    stop_retarget = multiprocessing.Event()
+    viewer_stopped = multiprocessing.Event()
+    retarget_process = multiprocessing.Process(
+        target=retarget_process_worker,
+        args=(landmark_queue, angles_queue, stop_retarget, viewer_stopped,
+              args.model_path, args.urdf_path, args.retargeter,
+              args.geort_checkpoint, args.geort_config,
+              not args.no_viewer, args.manual_calib, args.debug_timing),
+        daemon=True,
+    )
+    retarget_process.start()
 
     ingress.start()
     print("Multi-camera tracking started. Press 'q' or ESC to quit.")
@@ -248,11 +271,11 @@ def main():
     try:
         if args.no_display:
             print("Headless mode. Ctrl+C to quit.")
-            while not (viewer and viewer.stopped):
+            while not viewer_stopped.is_set():
                 time.sleep(0.1)
         else:
             while True:
-                if viewer and viewer.stopped:
+                if viewer_stopped.is_set():
                     break
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord('q'), 27):
@@ -263,10 +286,11 @@ def main():
     finally:
         print("Stopping demo...")
         stop_retarget.set()
-        retarget_thread.join(timeout=2.0)
         ingress.cleanup()
-        if viewer:
-            viewer.close()
+        retarget_process.join(timeout=3.0)
+        if retarget_process.is_alive():
+            retarget_process.terminate()
+            retarget_process.join(timeout=1.0)
         if robot_control_process and robot_control_process.is_alive():
             stop_robot_control.set()
             robot_control_process.join(timeout=3.0)

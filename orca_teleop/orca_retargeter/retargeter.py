@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Dict, Tuple, Union
 import numpy as np
 import pytorch_kinematics as pk
@@ -8,6 +9,74 @@ from orca_core import OrcaHand
 from .utils import retargeter_utils
 from .utils.manual_calibration import apply_manual_calibration
 from .utils.urdf_renamer import ensure_semantic_urdf
+
+logger = logging.getLogger(__name__)
+
+
+def _build_compiled_loss_fn(chain, joint_reorder_indices, optimization_frames,
+                            hand_type, fingers, root, fingertip_offsets,
+                            loss_coeffs, use_scalar_distance,
+                            regularizer_weights, regularizer_zeros):
+    """Build a torch.compile'd loss function that fuses FK + key vector + loss computation.
+
+    All chain/config parameters are captured as closure constants.
+    Returns a callable: (orcahand_joint_angles, mano_tips_flat, mano_palm) -> scalar loss
+    """
+    n_joints = chain.n_joints
+    deg2rad = np.pi / 180.0
+    palm_offset = torch.tensor([0, 0, 0.015], device=root.device)
+
+    # Pre-resolve fingertip/base frame names to avoid dict lookups inside hot path
+    fingertip_names = [retargeter_utils.get_fingertip_urdf_name(hand_type, f) for f in fingers]
+    thumb_base_name = retargeter_utils.get_finger_base_urdf_name(hand_type, "thumb")
+    pinky_base_name = retargeter_utils.get_finger_base_urdf_name(hand_type, "pinky")
+    tip_offsets = [fingertip_offsets[f] for f in fingers]
+
+    # Pre-compute scalar distance mask as tensor for vectorized branch
+    scalar_mask = torch.tensor(use_scalar_distance, device=root.device, dtype=torch.bool)
+
+    def loss_fn(gc_joints, mano_tips_flat, mano_palm):
+        # Build full joint angle vector and run FK
+        angles = torch.zeros(n_joints, device=gc_joints.device)
+        angles[joint_reorder_indices] = gc_joints * deg2rad
+        transforms = chain.forward_kinematics(angles, frame_indices=optimization_frames)
+
+        # Extract fingertip positions (with distal phalanx offsets)
+        tips = [transforms[name].transform_points(offset) for name, offset in zip(fingertip_names, tip_offsets)]
+
+        # Palm = mean of thumb base and pinky base origins
+        thumb_base = transforms[thumb_base_name].transform_points(root)
+        pinky_base = transforms[pinky_base_name].transform_points(root)
+        palm = torch.mean(torch.cat([thumb_base, pinky_base], dim=0), dim=0, keepdim=True) - palm_offset
+
+        # Key vectors: palm → fingertip
+        # mano_tips_flat is (5, 1, 3), mano_palm is (1, 3)
+        loss = torch.zeros(1, device=gc_joints.device)
+        for i in range(5):
+            kv_urdf = tips[i] - palm
+            kv_mano = mano_tips_flat[i] - mano_palm
+            if scalar_mask[i]:
+                loss = loss + loss_coeffs[i] * (torch.norm(kv_mano) - torch.norm(kv_urdf)) ** 2
+            else:
+                loss = loss + loss_coeffs[i] * torch.norm(kv_mano - kv_urdf) ** 2
+
+        # Regularization
+        loss = loss + torch.sum(regularizer_weights * (gc_joints - regularizer_zeros) ** 2)
+        return loss
+
+    try:
+        compiled = torch.compile(loss_fn, mode="reduce-overhead")
+        # Warm up with dummy forward pass to trigger compilation
+        dummy_joints = torch.zeros(len(joint_reorder_indices), device=root.device, requires_grad=True)
+        dummy_tips = torch.zeros(5, 1, 3, device=root.device)
+        dummy_palm = torch.zeros(1, 3, device=root.device)
+        _ = compiled(dummy_joints, dummy_tips, dummy_palm)
+        logger.info("torch.compile succeeded for loss function")
+        return compiled
+    except Exception as e:
+        logger.warning(f"torch.compile failed ({e}), using uncompiled loss function")
+        return loss_fn
+
 
 class Retargeter:
     """Retargeter class for Orca Hand to retarget MANO joint angles to Orca Hand joint angles."""
@@ -97,36 +166,32 @@ class Retargeter:
         self._calibration_mags = []
         self._frame_count = 0
         self.fk_points = None
+        self.enable_viz = True
+
+        # Build compiled loss function (fuses FK + key vectors + loss)
+        self._compiled_loss = _build_compiled_loss_fn(
+            self.chain, self.joint_reorder_indices, self.optimization_frames,
+            self.hand_type, self.fingers, self.root, self._fingertip_offsets,
+            self.loss_coeffs, self.use_scalar_distance,
+            self.regularizer_weights, self.regularizer_zeros)
 
 
     def optimize_orcahand_joint_angles(self, manohand_joint_pos: np.ndarray, opt_steps: int = 2) -> Tuple[np.ndarray, float]:
 
         manohand_joint_pos = torch.from_numpy(manohand_joint_pos).to(self.device)
         manohand_fingertips, manohand_palm = retargeter_utils.extract_mano_fingertips_and_palm(manohand_joint_pos, self.fingers, self.source)
-        keyvectors_manohand = retargeter_utils.get_keyvectors(manohand_fingertips, manohand_palm)
+
+        # Stack MANO fingertips into (5, 1, 3) tensor for compiled loss function
+        mano_tips_stacked = torch.stack([manohand_fingertips[f] for f in self.fingers])
+        mano_palm = manohand_palm
 
         for _ in range(opt_steps):
-
-            urdfhand_joint_angles = torch.zeros(self.chain.n_joints, device=self.device)
-            urdfhand_joint_angles[self.joint_reorder_indices] = self.orcahand_joint_angles / (180.0 / np.pi)
-            urdfhand_fingertips, urdfhand_palm = retargeter_utils.extract_orca_fingertips_and_palm(self.chain, urdfhand_joint_angles, self.optimization_frames, self.hand_type, self.fingers, self.root, fingertip_offsets=self._fingertip_offsets)
-            keyvectors_urdfhand = retargeter_utils.get_keyvectors(urdfhand_fingertips, urdfhand_palm)
-
-            # Compute loss between MANO and hand key vectors
-            loss = sum(
-                self.loss_coeffs[i] * (
-                    torch.norm(keyvector_manohand - keyvector_urdfhand) ** 2 if not self.use_scalar_distance[i]
-                    else (torch.norm(keyvector_manohand) - torch.norm(keyvector_urdfhand)) ** 2
-                )
-                for i, (keyvector_urdfhand, keyvector_manohand) in enumerate(zip(keyvectors_urdfhand, keyvectors_manohand))
-            )
-            # Add regularization term (tunable in retargeter.yaml)
-            loss += torch.sum(self.regularizer_weights * (self.orcahand_joint_angles - self.regularizer_zeros) ** 2)
+            loss = self._compiled_loss(self.orcahand_joint_angles, mano_tips_stacked, mano_palm)
 
             self.opt.zero_grad()
             loss.backward()
             self.opt.step()
-            
+
             with torch.no_grad():
                 self.orcahand_joint_angles.clamp_(self.joint_angle_limits_lower, self.joint_angle_limits_upper)
 
@@ -202,15 +267,14 @@ class Retargeter:
         optimized_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
         self.target_angles = optimized_angles
 
-        # Compute FK fingertip positions (with offsets) + palm for visualization
-        with torch.no_grad():
-            viz_angles = torch.zeros(self.chain.n_joints, device=self.device)
-            viz_angles[self.joint_reorder_indices] = torch.tensor(optimized_angles, device=self.device, dtype=torch.float32) / (180.0 / np.pi)
-            viz_ft, viz_palm = retargeter_utils.extract_orca_fingertips_and_palm(
-                self.chain, viz_angles, self.optimization_frames, self.hand_type, self.fingers, self.root,
-                fingertip_offsets=self._fingertip_offsets)
-            self.fk_points = np.array([viz_ft[f].cpu().numpy().squeeze() for f in self.fingers] + [viz_palm.cpu().numpy().squeeze()])
-
-        self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
+        if self.enable_viz:
+            with torch.no_grad():
+                viz_angles = torch.zeros(self.chain.n_joints, device=self.device)
+                viz_angles[self.joint_reorder_indices] = torch.tensor(optimized_angles, device=self.device, dtype=torch.float32) / (180.0 / np.pi)
+                viz_ft, viz_palm = retargeter_utils.extract_orca_fingertips_and_palm(
+                    self.chain, viz_angles, self.optimization_frames, self.hand_type, self.fingers, self.root,
+                    fingertip_offsets=self._fingertip_offsets)
+                self.fk_points = np.array([viz_ft[f].cpu().numpy().squeeze() for f in self.fingers] + [viz_palm.cpu().numpy().squeeze()])
+            self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
 
         return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, optimized_angles)}
