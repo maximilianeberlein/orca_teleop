@@ -17,6 +17,11 @@ except ImportError:
     pass
 
 try:
+    from .orca_ingress.multicam.multicam_ingress import MultiCamIngress
+except ImportError:
+    pass
+
+try:
     from .viewer.urdf_viewer import URDFViewer
 except ImportError:
     pass
