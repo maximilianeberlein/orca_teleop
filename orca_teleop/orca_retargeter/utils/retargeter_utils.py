@@ -223,16 +223,17 @@ def get_keyvectors(fingertips: Dict[str, torch.Tensor], palm: torch.Tensor) -> L
 
 
 def rotate_points_around_x(joints: np.ndarray, angle_degrees: float, source: str, hand_type: str = "right") -> np.ndarray:
-    """Rotate joint positions around the x-axis by a given angle (degrees)."""
-    
+    """Rotate joint positions around the x-axis by a given angle (degrees).
+
+    Must match the URDF wrist rotation direction. For right hand the URDF wrist
+    axis is (-1,0,0) and the angle is negated (``-final_wrist_angle``), so the
+    effective visual rotation is ``final_wrist_angle`` degrees around +X —
+    i.e. ``np.radians(angle_degrees)`` with no extra sign flip.
+    """
     joint_dict = get_mano_joints_dict(joints, source)
     wrist = joint_dict["wrist"]
-    
-    # # Invert angle for left hand
-    # if hand_type == "left":
-    #     angle_degrees *= -1
-        
-    angle_radians = -np.radians(angle_degrees)  
+
+    angle_radians = np.radians(angle_degrees)
     rotation_matrix = np.array([
         [1, 0, 0],
         [0, np.cos(angle_radians), -np.sin(angle_radians)],
