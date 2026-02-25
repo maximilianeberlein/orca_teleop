@@ -1,5 +1,4 @@
 import os
-import logging
 from typing import Dict, Tuple, Union
 import numpy as np
 import pytorch_kinematics as pk
@@ -10,67 +9,51 @@ from .utils import retargeter_utils
 from .utils.manual_calibration import apply_manual_calibration
 from .utils.urdf_renamer import ensure_semantic_urdf
 
-logger = logging.getLogger(__name__)
 
+def _build_loss_fn(chain, joint_reorder_indices, optimization_frames,
+                   hand_type, fingers, root, fingertip_offsets,
+                   loss_coeffs, use_scalar_distance,
+                   regularizer_weights, regularizer_zeros):
+    """Build a loss closure with pre-resolved frame names and offsets.
 
-def _build_compiled_loss_fn(chain, joint_reorder_indices, optimization_frames,
-                            hand_type, fingers, root, fingertip_offsets,
-                            loss_coeffs, use_scalar_distance,
-                            regularizer_weights, regularizer_zeros):
-    """Build a torch.compile'd loss function that fuses FK + key vector + loss computation.
-
-    All chain/config parameters are captured as closure constants.
-    Returns a callable: (orcahand_joint_angles, mano_tips_flat, mano_palm) -> scalar loss
+    All chain/config parameters are captured as closure constants to reduce
+    per-call Python overhead (dict lookups, function calls, etc.).
+    Returns a callable: (orcahand_joint_angles, mano_tips_stacked, mano_palm) -> scalar loss
     """
     n_joints = chain.n_joints
     deg2rad = np.pi / 180.0
     palm_offset = torch.tensor([0, 0, 0.015], device=root.device)
 
-    # Pre-resolve fingertip/base frame names to avoid dict lookups inside hot path
     fingertip_names = [retargeter_utils.get_fingertip_urdf_name(hand_type, f) for f in fingers]
     thumb_base_name = retargeter_utils.get_finger_base_urdf_name(hand_type, "thumb")
     pinky_base_name = retargeter_utils.get_finger_base_urdf_name(hand_type, "pinky")
     tip_offsets = [fingertip_offsets[f] for f in fingers]
+    scalar_mask = use_scalar_distance
 
-    # Pre-compute scalar distance mask as tensor for vectorized branch
-    scalar_mask = torch.tensor(use_scalar_distance, device=root.device, dtype=torch.bool)
-
-    def loss_fn(gc_joints, mano_tips_flat, mano_palm):
-        # Build full joint angle vector and run FK
+    def loss_fn(gc_joints, mano_tips_stacked, mano_palm):
         angles = torch.zeros(n_joints, device=gc_joints.device)
         angles[joint_reorder_indices] = gc_joints * deg2rad
         transforms = chain.forward_kinematics(angles, frame_indices=optimization_frames)
 
-        # Extract fingertip positions (with distal phalanx offsets)
         tips = [transforms[name].transform_points(offset) for name, offset in zip(fingertip_names, tip_offsets)]
 
-        # Palm = mean of thumb base and pinky base origins
         thumb_base = transforms[thumb_base_name].transform_points(root)
         pinky_base = transforms[pinky_base_name].transform_points(root)
         palm = torch.mean(torch.cat([thumb_base, pinky_base], dim=0), dim=0, keepdim=True) - palm_offset
 
-        # Key vectors: palm → fingertip
-        # mano_tips_flat is (5, 1, 3), mano_palm is (1, 3)
         loss = torch.zeros(1, device=gc_joints.device)
         for i in range(5):
             kv_urdf = tips[i] - palm
-            kv_mano = mano_tips_flat[i] - mano_palm
+            kv_mano = mano_tips_stacked[i] - mano_palm
             if scalar_mask[i]:
                 loss = loss + loss_coeffs[i] * (torch.norm(kv_mano) - torch.norm(kv_urdf)) ** 2
             else:
                 loss = loss + loss_coeffs[i] * torch.norm(kv_mano - kv_urdf) ** 2
 
-        # Regularization
         loss = loss + torch.sum(regularizer_weights * (gc_joints - regularizer_zeros) ** 2)
         return loss
 
-    try:
-        compiled = torch.compile(loss_fn, mode="reduce-overhead")
-        logger.info("torch.compile wrapped loss function (will compile on first call)")
-        return compiled
-    except Exception as e:
-        logger.warning(f"torch.compile failed ({e}), using uncompiled loss function")
-        return loss_fn
+    return loss_fn
 
 
 class Retargeter:
@@ -166,8 +149,8 @@ class Retargeter:
         self._blend_count = 0
         self._prev_angles = None
 
-        # Build compiled loss function (fuses FK + key vectors + loss)
-        self._compiled_loss = _build_compiled_loss_fn(
+        # Build loss closure with pre-resolved frame names and offsets
+        self._loss_fn = _build_loss_fn(
             self.chain, self.joint_reorder_indices, self.optimization_frames,
             self.hand_type, self.fingers, self.root, self._fingertip_offsets,
             self.loss_coeffs, self.use_scalar_distance,
@@ -184,7 +167,7 @@ class Retargeter:
         mano_palm = manohand_palm
 
         for _ in range(opt_steps):
-            loss = self._compiled_loss(self.orcahand_joint_angles, mano_tips_stacked, mano_palm)
+            loss = self._loss_fn(self.orcahand_joint_angles, mano_tips_stacked, mano_palm)
 
             self.opt.zero_grad()
             loss.backward()
