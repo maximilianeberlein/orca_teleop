@@ -26,18 +26,28 @@ JOINT_REF_OFFSETS_RAD = {
 }
 
 
-def get_ref_offsets_array(joint_ids):
-    """Return ref offsets as numpy array (radians) in the given joint order."""
-    return np.array([JOINT_REF_OFFSETS_RAD.get(jid, 0.0) for jid in joint_ids])
+def get_ref_offsets_array(joint_ids, ref_offsets=None):
+    """Return ref offsets as numpy array (radians) in the given joint order.
+
+    If *ref_offsets* dict is provided (from sidecar JSON), use it; otherwise
+    fall back to the hardcoded ``JOINT_REF_OFFSETS_RAD``.
+    """
+    offsets = ref_offsets if ref_offsets is not None else JOINT_REF_OFFSETS_RAD
+    return np.array([offsets.get(jid, 0.0) for jid in joint_ids])
 
 
-def urdf_angles_to_physical(angles_dict):
+def urdf_angles_to_physical(angles_dict, ref_offsets=None):
     """Convert retargeter output dict (URDF-space radians, keyed by urdf_joint_id)
-    to physical-space degrees (keyed by bare joint_id) for robot control."""
+    to physical-space degrees (keyed by bare joint_id) for robot control.
+
+    If *ref_offsets* dict is provided (from sidecar JSON), use it; otherwise
+    fall back to the hardcoded ``JOINT_REF_OFFSETS_RAD``.
+    """
+    offsets = ref_offsets if ref_offsets is not None else JOINT_REF_OFFSETS_RAD
     result = {}
     for urdf_name, urdf_rad in angles_dict.items():
         bare_name = urdf_name.split('_', 1)[1] if urdf_name.startswith(('left_', 'right_')) else urdf_name
-        ref_rad = JOINT_REF_OFFSETS_RAD.get(bare_name, 0.0)
+        ref_rad = offsets.get(bare_name, 0.0)
         result[bare_name] = np.rad2deg(float(urdf_rad) + ref_rad)
     return result
 
@@ -200,8 +210,8 @@ def get_keyvectors(fingertips: Dict[str, torch.Tensor], palm: torch.Tensor) -> L
     ]
 
 
-def rotate_points_around_y(joints: np.ndarray, angle_degrees: float, source: str, hand_type: str = "right") -> np.ndarray:
-    """Rotate joint positions around the y-axis by a given angle (degrees)."""
+def rotate_points_around_x(joints: np.ndarray, angle_degrees: float, source: str, hand_type: str = "right") -> np.ndarray:
+    """Rotate joint positions around the x-axis by a given angle (degrees)."""
     
     joint_dict = get_mano_joints_dict(joints, source)
     wrist = joint_dict["wrist"]
@@ -242,7 +252,6 @@ def get_hand_center_and_rotation(
     z axis goes from the palm if the hand is right hand, otherwise it goes to the palm
     """
     hand_center = (thumb_base + pinky_base) / 2
-    hand_center = hand_center
     if wrist is None:
         wrist = hand_center
 

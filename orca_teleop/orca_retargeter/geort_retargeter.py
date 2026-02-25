@@ -7,6 +7,7 @@ import yaml
 from orca_core import OrcaHand
 from .utils import retargeter_utils
 from .utils.manual_calibration import apply_manual_calibration
+from .utils.urdf_renamer import ensure_semantic_urdf
 
 class GeoRTRetargeter:
     """GeoRT-inspired retargeter using normalized key vectors (direction-only) and pinch distance matching."""
@@ -16,11 +17,7 @@ class GeoRTRetargeter:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.source = source
         self.target_angles = None
-
-        if not os.path.exists(urdf_path):
-            raise ValueError(f"URDF file not found at {urdf_path}")
-        with open(urdf_path, 'r') as f:
-            self.chain = pk.build_chain_from_urdf(f.read()).to(device=self.device)
+        self.mano_points = None
 
         hand = OrcaHand(model_path)
         if hand.type not in ["left", "right"]:
@@ -28,13 +25,19 @@ class GeoRTRetargeter:
         self.hand_type = hand.type
         self.joint_ids = hand.joint_ids
         self.urdf_joint_ids = [f"{hand.type}_{joint_id}" for joint_id in self.joint_ids]
+
+        if not os.path.exists(urdf_path):
+            raise ValueError(f"URDF file not found at {urdf_path}")
+        self._ref_offsets = ensure_semantic_urdf(urdf_path, self.hand_type, self.joint_ids)
+        with open(urdf_path, 'r') as f:
+            self.chain = pk.build_chain_from_urdf(f.read()).to(device=self.device)
         self.fingers = ["thumb", "index", "middle", "ring", "pinky"]
         lower_limits, upper_limits = map(list, zip(*hand.joint_roms_dict.values()))
         self.wrist_idx = self.joint_ids.index("wrist")
         self.wrist_limit_lower = lower_limits[self.wrist_idx]
         self.wrist_limit_upper = upper_limits[self.wrist_idx]
         lower_limits[self.wrist_idx] = upper_limits[self.wrist_idx] = 0.0
-        ref_offsets_deg = np.rad2deg(retargeter_utils.get_ref_offsets_array(self.joint_ids))
+        ref_offsets_deg = np.rad2deg(retargeter_utils.get_ref_offsets_array(self.joint_ids, self._ref_offsets))
         lower_limits_urdf = np.array(lower_limits) - ref_offsets_deg
         upper_limits_urdf = np.array(upper_limits) - ref_offsets_deg
         self.joint_angle_limits_lower = torch.tensor(lower_limits_urdf, device=self.device)
@@ -76,7 +79,7 @@ class GeoRTRetargeter:
         # Use halfway between curled (0) and extended (-ref) to approximate relaxed pose
         neutral_angles = torch.zeros(self.chain.n_joints, device=self.device)
         ref_rad_tensor = torch.tensor(
-            retargeter_utils.get_ref_offsets_array(self.joint_ids),
+            retargeter_utils.get_ref_offsets_array(self.joint_ids, self._ref_offsets),
             device=self.device, dtype=torch.float32)
         neutral_angles[self.joint_reorder_indices] = -0.5 * ref_rad_tensor
         urdf_fingertips, urdf_palm = retargeter_utils.extract_orca_fingertips_and_palm(
@@ -188,7 +191,7 @@ class GeoRTRetargeter:
             final_wrist_angle = np.clip(final_wrist_angle, self.wrist_limit_lower, self.wrist_limit_upper)
             zero_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
             self.target_angles = zero_angles
-            self.mano_points = retargeter_utils.rotate_points_around_y(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
+            self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
             return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, zero_angles)}
 
         optimized_angles = self.optimize_orcahand_joint_angles(manohand_joint_pos)
@@ -197,6 +200,6 @@ class GeoRTRetargeter:
         optimized_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
         self.target_angles = optimized_angles
 
-        self.mano_points = retargeter_utils.rotate_points_around_y(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
+        self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
 
         return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, optimized_angles)}

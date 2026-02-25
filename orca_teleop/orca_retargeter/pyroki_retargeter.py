@@ -7,6 +7,7 @@ import yaml
 from orca_core import OrcaHand
 from .utils import retargeter_utils
 from .utils.manual_calibration import apply_manual_calibration
+from .utils.urdf_renamer import ensure_semantic_urdf
 
 import jax
 import jax.numpy as jnp
@@ -167,6 +168,7 @@ class PyRoKIRetargeter:
 
         if not os.path.exists(urdf_path):
             raise ValueError(f"URDF file not found at {urdf_path}")
+        self._ref_offsets = ensure_semantic_urdf(urdf_path, self.hand_type, self.joint_ids)
         urdf_dir = os.path.dirname(os.path.abspath(urdf_path))
         urdf = yourdfpy.URDF.load(
             urdf_path, load_meshes=False,
@@ -199,7 +201,7 @@ class PyRoKIRetargeter:
         self._loss_coeffs = jnp.array(cfg["loss_coeffs"])
         self._smoothness_weight = jnp.array(cfg["smoothness_weight"])
 
-        ref_offsets_deg = np.rad2deg(retargeter_utils.get_ref_offsets_array(self.joint_ids))
+        ref_offsets_deg = np.rad2deg(retargeter_utils.get_ref_offsets_array(self.joint_ids, self._ref_offsets))
         self._lower_limits_deg = np.array(lower_limits) - ref_offsets_deg
         self._upper_limits_deg = np.array(upper_limits) - ref_offsets_deg
 
@@ -264,7 +266,7 @@ class PyRoKIRetargeter:
     def _compute_urdf_reference_params(self):
         # Use halfway between curled (0) and extended (-ref) to approximate relaxed pose
         neutral_orca_rad = -0.5 * np.array(
-            retargeter_utils.get_ref_offsets_array(self.joint_ids), dtype=np.float32)
+            retargeter_utils.get_ref_offsets_array(self.joint_ids, self._ref_offsets), dtype=np.float32)
         extended_cfg = jnp.array(neutral_orca_rad[self._pyroki_to_orca])
         fk = self.robot.forward_kinematics(cfg=extended_cfg)  # (n_links, 7)
 
@@ -407,7 +409,7 @@ class PyRoKIRetargeter:
             final_wrist_angle = np.clip(final_wrist_angle, self.wrist_limit_lower, self.wrist_limit_upper)
             zero_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
             self.target_angles = zero_angles
-            self.mano_points = retargeter_utils.rotate_points_around_y(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
+            self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
             return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, zero_angles)}
 
         optimized_angles = self._solve(manohand_joint_pos)
@@ -416,6 +418,6 @@ class PyRoKIRetargeter:
         optimized_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
         self.target_angles = optimized_angles
 
-        self.mano_points = retargeter_utils.rotate_points_around_y(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
+        self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
 
         return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, optimized_angles)}

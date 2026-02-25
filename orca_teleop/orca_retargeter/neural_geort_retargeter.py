@@ -8,6 +8,7 @@ import torch
 from orca_core import OrcaHand
 from .utils import retargeter_utils
 from .utils.manual_calibration import apply_manual_calibration
+from .utils.urdf_renamer import ensure_semantic_urdf
 
 # Add GeoRT to path so we can import its modules
 _GEORT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "third_party", "GeoRT")
@@ -16,7 +17,7 @@ if _GEORT_ROOT not in sys.path:
 
 from geort.model import IKModel
 
-_GEORT_THUMB_RENAME = {"thumb_mcp": "thumb_cmc", "thumb_pip": "thumb_mcp"}
+_GEORT_THUMB_RENAME_OLD = {"thumb_mcp": "thumb_cmc", "thumb_pip": "thumb_mcp"}
 
 
 class NeuralGeoRTRetargeter:
@@ -68,11 +69,14 @@ class NeuralGeoRTRetargeter:
 
         # Build mapping from GeoRT's joint_order (16 joints) to ORCA's urdf_joint_ids (17 joints, last is wrist)
         # GeoRT outputs joints in config's joint_order; we need to reorder to match self.urdf_joint_ids
+        # Old GeoRT configs use thumb_mcp/pip (meaning CMC/MCP); new configs use correct thumb_cmc/mcp
+        uses_old_thumb_naming = any("thumb_pip" in j for j in joint_order)
         self.geort_to_orca_indices = []
         for geort_idx, geort_joint_name in enumerate(joint_order):
             # Strip hand prefix to get the bare joint id (e.g. "right_thumb_abd" -> "thumb_abd")
             bare_name = geort_joint_name.split("_", 1)[1] if geort_joint_name.startswith(("left_", "right_")) else geort_joint_name
-            bare_name = _GEORT_THUMB_RENAME.get(bare_name, bare_name)
+            if uses_old_thumb_naming:
+                bare_name = _GEORT_THUMB_RENAME_OLD.get(bare_name, bare_name)
             orca_idx = self.joint_ids.index(bare_name)
             self.geort_to_orca_indices.append(orca_idx)
 
@@ -86,6 +90,7 @@ class NeuralGeoRTRetargeter:
 
         # --- Visualization: URDF world-frame transform (same approach as default Retargeter) ---
         self._fingers = ["thumb", "index", "middle", "ring", "pinky"]
+        self._ref_offsets = ensure_semantic_urdf(urdf_path, self.hand_type, self.joint_ids)
         with open(urdf_path, 'r') as f:
             viz_chain = pk.build_chain_from_urdf(f.read())
         viz_root = torch.zeros(1, 3)
@@ -97,7 +102,7 @@ class NeuralGeoRTRetargeter:
         # Use halfway between curled (0) and extended (-ref) to approximate relaxed pose
         neutral_angles = torch.zeros(viz_chain.n_joints)
         ref_rad = torch.tensor(
-            retargeter_utils.get_ref_offsets_array(self.joint_ids), dtype=torch.float32)
+            retargeter_utils.get_ref_offsets_array(self.joint_ids, self._ref_offsets), dtype=torch.float32)
         neutral_angles[viz_reorder] = -0.5 * ref_rad
         urdf_ft, urdf_palm = retargeter_utils.extract_orca_fingertips_and_palm(
             viz_chain, neutral_angles, viz_frames, self.hand_type, self._fingers, viz_root,
@@ -181,6 +186,6 @@ class NeuralGeoRTRetargeter:
         mano_viz = apply_manual_calibration(
             mano_viz, self._urdfhand_center,
             self.manual_scale, self.manual_rotation, self.manual_translation)
-        self.mano_points = retargeter_utils.rotate_points_around_y(mano_viz, final_wrist_angle, self.source, self.hand_type)
+        self.mano_points = retargeter_utils.rotate_points_around_x(mano_viz, final_wrist_angle, self.source, self.hand_type)
 
         return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, orca_angles)}
