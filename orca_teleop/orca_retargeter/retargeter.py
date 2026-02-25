@@ -66,12 +66,7 @@ def _build_compiled_loss_fn(chain, joint_reorder_indices, optimization_frames,
 
     try:
         compiled = torch.compile(loss_fn, mode="reduce-overhead")
-        # Warm up with dummy forward pass to trigger compilation
-        dummy_joints = torch.zeros(len(joint_reorder_indices), device=root.device, requires_grad=True)
-        dummy_tips = torch.zeros(5, 1, 3, device=root.device)
-        dummy_palm = torch.zeros(1, 3, device=root.device)
-        _ = compiled(dummy_joints, dummy_tips, dummy_palm)
-        logger.info("torch.compile succeeded for loss function")
+        logger.info("torch.compile wrapped loss function (will compile on first call)")
         return compiled
     except Exception as e:
         logger.warning(f"torch.compile failed ({e}), using uncompiled loss function")
@@ -167,6 +162,9 @@ class Retargeter:
         self._frame_count = 0
         self.fk_points = None
         self.enable_viz = True
+        self._blend_frames = 30  # frames to blend from calibration to optimization
+        self._blend_count = 0
+        self._prev_angles = None
 
         # Build compiled loss function (fuses FK + key vectors + loss)
         self._compiled_loss = _build_compiled_loss_fn(
@@ -246,10 +244,19 @@ class Retargeter:
             final_wrist_angle = np.clip(final_wrist_angle, self.wrist_limit_lower, self.wrist_limit_upper)
             zero_angles[self.wrist_idx] = final_wrist_angle if self.hand_type == "left" else -final_wrist_angle
             self.target_angles = zero_angles
+            self._prev_angles = zero_angles.copy()
             self.mano_points = retargeter_utils.rotate_points_around_x(manohand_joint_pos, final_wrist_angle, self.source, self.hand_type)
             return {urdf_joint_id: np.deg2rad(angle) for urdf_joint_id, angle in zip(self.urdf_joint_ids, zero_angles)}
 
         optimized_angles = self.optimize_orcahand_joint_angles(manohand_joint_pos)
+
+        # Smooth blend from calibration pose to optimized angles over _blend_frames
+        if self._blend_count < self._blend_frames:
+            alpha = (self._blend_count + 1) / self._blend_frames
+            if self._prev_angles is not None:
+                optimized_angles = self._prev_angles * (1 - alpha) + optimized_angles * alpha
+            self._blend_count += 1
+        self._prev_angles = optimized_angles.copy()
 
         self._frame_count += 1
         if self.verbose and self._frame_count % 60 == 1:

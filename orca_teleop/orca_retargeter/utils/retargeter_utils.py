@@ -86,7 +86,7 @@ def preprocess_mediapipe_data(data: Dict) -> Tuple[np.ndarray, float]:
 
     landmarks = data["hand_landmarks"]
     joints = landmarks.copy()
-    wrist_angle = 0.0  # Default to no rotation for MediaPipe
+    wrist_angle = -25.0
     return joints, wrist_angle
 
 
@@ -95,7 +95,7 @@ def preprocess_multicam_data(data: Dict) -> Tuple[np.ndarray, float]:
 
     landmarks = data["hand_landmarks"]
     joints = landmarks.copy()
-    wrist_angle = 0.0
+    wrist_angle = -25.0
     return joints, wrist_angle
 
 

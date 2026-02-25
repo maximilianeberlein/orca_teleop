@@ -11,6 +11,7 @@ _timing_count = 0
 
 
 def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
+    import time
     try:
         from orca_core import OrcaHand
         from orca_teleop.orca_retargeter.utils.retargeter_utils import urdf_angles_to_physical
@@ -25,6 +26,10 @@ def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
             return
         hand.init_joints()
         ready.set()
+        # Slow ramp for first few seconds to protect tendons
+        startup_ramp_duration = 2.0  # seconds
+        startup_time = time.monotonic()
+        last_physical = None
         while not stop.is_set():
             try:
                 angles = q.get(timeout=0.1)
@@ -34,7 +39,17 @@ def robot_control_process_worker(q, stop, ready, model_path, urdf_path=None):
                     except Exception:
                         break
                 if angles:
-                    hand.set_joint_pos(urdf_angles_to_physical(angles, ref_offsets))
+                    physical = urdf_angles_to_physical(angles, ref_offsets)
+                    # During startup ramp, interpolate toward target to limit speed
+                    elapsed = time.monotonic() - startup_time
+                    if elapsed < startup_ramp_duration and last_physical is not None:
+                        alpha = min(elapsed / startup_ramp_duration, 1.0)
+                        blended = {}
+                        for k in physical:
+                            blended[k] = last_physical.get(k, physical[k]) * (1 - alpha) + physical[k] * alpha
+                        physical = blended
+                    hand.set_joint_pos(physical)
+                    last_physical = physical
             except Exception:
                 continue
     except Exception as e:
