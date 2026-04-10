@@ -1,0 +1,433 @@
+<robot name="orcahand-model">
+	<material name="white">
+		<color rgba="1 1 1 1" />
+	</material>
+	
+	
+	<link name="right_forearm">
+		<inertial>
+			<origin xyz="0 0 0" rpy="0.0 0.0 0.0" />
+			<mass value="7.422772269408962" />
+			<inertia ixx="128.4318900361609" iyy="109.76841848699638" izz="132.91124270845685" ixy="-2.087847423904692" ixz="1.4281855698072828e-13" iyz="-2.854586256262337e-14" />
+		</inertial>
+		<visual>
+			<origin xyz="0 0 0" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/ForeArmStructure-Model.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	
+	
+	<link name="right_wrist_link">
+		<inertial>
+			<origin xyz="0 0 0" rpy="0.0 0.0 0.0" />
+			<mass value="1.4358302150483626" />
+			<inertia ixx="12.708767151212927" iyy="11.59574536210755" izz="16.243505983672723" ixy="1.940323774306307e-06" ixz="4.034621417713424e-06" iyz="-0.04398962617143915" />
+		</inertial>
+		<visual>
+			<origin xyz="0 0 0" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/TopTower-Model.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="fixed" name="right_wrist_link_fixed">
+		<parent link="right_forearm" />
+		<child link="right_wrist_link" />
+		<origin xyz="-0.010000000000000018 0.05230000000000584 -2.0816681711721685e-17" rpy="-1.5707963267948966 1.570796326794894 0.0" />
+	</joint>
+	
+	
+	<link name="right_palm">
+		<inertial>
+			<origin xyz="-0.004999999999999981 -0.0018770780631086129 0.049500000670552415" rpy="0.0 0.0 0.0" />
+			<mass value="0.8530674839222121" />
+			<inertia ixx="5.64599655945535" iyy="8.775715922656463" izz="4.238061929890296" ixy="-0.3232643354144511" ixz="0.8904961899074508" iyz="0.5112439505719035" />
+		</inertial>
+		<visual>
+			<origin xyz="-0.004999999999999981 -0.0018770780631086129 0.049500000670552415" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/R-Carpals.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_wrist">
+		<parent link="right_wrist_link" />
+		<child link="right_palm" />
+		<origin xyz="-3.2959746043559335e-17 2.42861286636753e-17 0.04" rpy="0.09289260590234294 0.0 -1.5707963267949" />
+		<axis xyz="-0.9999999999999938 -9.630996986119195e-17 7.703182845897774e-17" />
+		<limit lower="-1.1344640137963142" upper="0.6108652381980153" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_pinky_mp">
+		<inertial>
+			<origin xyz="-0.01775000000000023 -7.719519468096792e-17 -0.0009999999999999966" rpy="0.0 0.0 0.0" />
+			<mass value="0.025832391646376553" />
+			<inertia ixx="0.013522757440135555" iyy="0.03380562916501796" izz="0.037926070358509256" ixy="-3.167478840852844e-06" ixz="-0.002331119633907205" iyz="-4.487549673535706e-07" />
+		</inertial>
+		<visual>
+			<origin xyz="-0.01775000000000023 -7.719519468096792e-17 -0.0009999999999999966" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/P-AP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_pinky_abd">
+		<parent link="right_palm" />
+		<child link="right_pinky_mp" />
+		<origin xyz="0.03564171604590427 0.0006891586859576484 0.06205424192069385" rpy="-1.5224982763416053 1.2579440273085907 -2.904592469503598" />
+		<axis xyz="2.498001805406602e-16 -1.1102230246251565e-16 1.000000000000007" />
+		<limit lower="-0.5235987755982988" upper="0.5235987755982988" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_pinky_pp">
+		<inertial>
+			<origin xyz="9.169868087003068e-18 3.2416949015788624e-17 -2.466914618245282e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.008080250955757862" />
+			<inertia ixx="0.025661504202305643" iyy="0.025813993359514866" izz="0.003476420784123192" ixy="2.7484806742075756e-07" ixz="-0.0018033087152573186" iyz="-3.611797272485351e-05" />
+		</inertial>
+		<visual>
+			<origin xyz="9.169868087003068e-18 3.2416949015788624e-17 -2.466914618245282e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/P-PP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_pinky_mcp">
+		<parent link="right_pinky_mp" />
+		<child link="right_pinky_pp" />
+		<origin xyz="-0.017750000000042766 -1.471513750451518e-16 -0.0009999999999996865" rpy="4.440892098500626e-15 -1.162450260857511 -5.329070518200751e-15" />
+		<axis xyz="1.9984014443252818e-15 -1.000000000000005 9.71445146547012e-16" />
+		<limit lower="-1.0471975511965976" upper="1.7453292519943295" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_pinky_fingertip">
+		<inertial>
+			<origin xyz="-1.6500029895434137e-17 1.603234676666448e-16 -3.0895633627166036e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.077601125681334" />
+			<inertia ixx="0.30272529615882315" iyy="0.3121287876048924" izz="0.02610606111956632" ixy="-2.5492682886922744e-07" ixz="0.02534716903299485" iyz="0.00019494766142365898" />
+		</inertial>
+		<visual>
+			<origin xyz="-1.6500029895434137e-17 1.603234676666448e-16 -3.0895633627166036e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/P-FingerTipAssembly.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_pinky_pip">
+		<parent link="right_pinky_pp" />
+		<child link="right_pinky_fingertip" />
+		<origin xyz="0.0010000000000001516 -8.627315522741384e-17 0.030999999999999958" rpy="-2.710141358729721e-16 -0.2873413294012146 4.975041580987574e-15" />
+		<axis xyz="-2.6645352591003757e-15 -1.0000000000000084 1.3739009929736312e-15" />
+		<limit lower="-0.2617993877991494" upper="1.8675022996339325" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_ring_mp">
+		<inertial>
+			<origin xyz="-0.019250000000000086 -1.5612511283791264e-17 -0.0010000000000000104" rpy="0.0 0.0 0.0" />
+			<mass value="0.032519771439901" />
+			<inertia ixx="0.020500922910093925" iyy="0.04685391824550257" izz="0.05152571078999821" ixy="-2.0596306437421495e-06" ixz="-0.002994066569167041" iyz="-3.369965655261708e-07" />
+		</inertial>
+		<visual>
+			<origin xyz="-0.019250000000000086 -1.5612511283791264e-17 -0.0010000000000000104" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/M-AP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_ring_abd">
+		<parent link="right_palm" />
+		<child link="right_ring_mp" />
+		<origin xyz="0.015307722147416492 -0.0032183646651256165 0.07130479703009864" rpy="-1.570796326794898 1.4497389321405674 -3.054326190990079" />
+		<axis xyz="-5.551115123125783e-16 -2.7755575615628914e-16 0.9999999999999982" />
+		<limit lower="-0.47123889803846897" upper="0.47123889803846897" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_ring_pp">
+		<inertial>
+			<origin xyz="5.700665686981452e-17 2.225537780320469e-17 -1.8869844904811258e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.012677212618130745" />
+			<inertia ixx="0.06398795871049195" iyy="0.06496843631962" izz="0.006828043347124116" ixy="1.6018492960232978e-06" ixz="-0.004933868155861309" iyz="-4.5886778446443334e-05" />
+		</inertial>
+		<visual>
+			<origin xyz="5.700665686981452e-17 2.225537780320469e-17 -1.8869844904811258e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/M-PP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_ring_mcp">
+		<parent link="right_ring_mp" />
+		<child link="right_ring_pp" />
+		<origin xyz="-0.019250000000042747 -6.299648727780382e-17 -0.0009999999999997244" rpy="4.884981308350689e-15 -1.165956784417329 -5.329070518200751e-15" />
+		<axis xyz="2.3314683517128287e-15 -1.0000000000000036 -6.661338147750939e-16" />
+		<limit lower="-1.0471975511965976" upper="1.7453292519943295" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_ring_fingertip">
+		<inertial>
+			<origin xyz="2.1485182727897087e-17 6.802915389584729e-17 -1.0181359902818274e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.10727655673207101" />
+			<inertia ixx="0.5916273374327218" iyy="0.6006750605714138" izz="0.037455492664449" ixy="4.721545619181251e-05" ixz="0.017882728221703833" iyz="0.0001278559819768477" />
+		</inertial>
+		<visual>
+			<origin xyz="2.1485182727897087e-17 6.802915389584729e-17 -1.0181359902818274e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/M-FingerTipAssembly-Black.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_ring_pip">
+		<parent link="right_ring_pp" />
+		<child link="right_ring_fingertip" />
+		<origin xyz="0.0020000000000001583 -7.526407518424884e-17 0.039999999999999744" rpy="-6.321506376238568e-17 -0.2758921831131236 4.4922588798890826e-15" />
+		<axis xyz="-2.55351295663786e-15 -1.0000000000000089 -2.498001805406602e-16" />
+		<limit lower="-0.2617993877991494" upper="1.8675022996339325" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_middle_mp">
+		<inertial>
+			<origin xyz="-0.019250000000000222 8.673617379884035e-18 -0.0010000000000000096" rpy="0.0 0.0 0.0" />
+			<mass value="0.032519771439901" />
+			<inertia ixx="0.020500922910093925" iyy="0.04685391824550257" izz="0.05152571078999821" ixy="-2.0596306437421495e-06" ixz="-0.002994066569167041" iyz="-3.369965655261708e-07" />
+		</inertial>
+		<visual>
+			<origin xyz="-0.019250000000000222 8.673617379884035e-18 -0.0010000000000000096" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/M-AP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_middle_abd">
+		<parent link="right_palm" />
+		<child link="right_middle_mp" />
+		<origin xyz="-0.005706333727246688 -0.004023404072025652 0.07850189342716919" rpy="1.5707963267950564 1.568363625908518 1.5942802633617248e-13" />
+		<axis xyz="-8.049116928532385e-16 1.1102230246251565e-16 1.000000000000007" />
+		<limit lower="-0.47123889803846897" upper="0.47123889803846897" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_middle_pp">
+		<inertial>
+			<origin xyz="1.0227522954513753e-16 1.875436446516443e-17 -1.0133092484243335e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.012677212618130745" />
+			<inertia ixx="0.06398795871049195" iyy="0.06496843631962" izz="0.006828043347124116" ixy="1.6018492960232978e-06" ixz="-0.004933868155861309" iyz="-4.5886778446443334e-05" />
+		</inertial>
+		<visual>
+			<origin xyz="1.0227522954513753e-16 1.875436446516443e-17 -1.0133092484243335e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/M-PP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_middle_mcp">
+		<parent link="right_middle_mp" />
+		<child link="right_middle_pp" />
+		<origin xyz="-0.019250000000042317 -1.4694768354619675e-17 -0.000999999999999708" rpy="5.329070518200751e-15 -1.14190613061141 -4.884981308350689e-15" />
+		<axis xyz="2.275957200481571e-15 -1.000000000000007 8.604228440844963e-16" />
+		<limit lower="-1.0471975511965976" upper="1.7453292519943295" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_middle_fingertip">
+		<inertial>
+			<origin xyz="-9.219511976271865e-18 1.70704351104027e-17 -1.159921775689712e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.10727655673207101" />
+			<inertia ixx="0.5916273374327218" iyy="0.6006750605714138" izz="0.037455492664449" ixy="4.721545619181251e-05" ixz="0.017882728221703833" iyz="0.0001278559819768477" />
+		</inertial>
+		<visual>
+			<origin xyz="-9.219511976271865e-18 1.70704351104027e-17 -1.159921775689712e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/M-FingerTipAssembly-Black.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_middle_pip">
+		<parent link="right_middle_pp" />
+		<child link="right_middle_fingertip" />
+		<origin xyz="0.001999999999999982 3.637839887429781e-17 0.04000000000000013" rpy="-1.477445421485926e-15 -0.29829009009899865 5.723166307809804e-15" />
+		<axis xyz="-2.942091015256665e-15 -1.0000000000000075 3.608224830031759e-16" />
+		<limit lower="-0.2617993877991494" upper="1.8675022996339325" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_index_mp">
+		<inertial>
+			<origin xyz="-0.018750000000000034 1.474514954580286e-17 -0.0009999999999999992" rpy="0.0 0.0 0.0" />
+			<mass value="0.029822945921816744" />
+			<inertia ixx="0.017878744827776846" iyy="0.04190374555018086" izz="0.04672174032261275" ixy="-0.0001797533408073746" ixz="-0.00269203242784643" iyz="-8.40625882660897e-06" />
+		</inertial>
+		<visual>
+			<origin xyz="-0.018750000000000034 1.474514954580286e-17 -0.0009999999999999992" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/I-AP-R.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_index_abd">
+		<parent link="right_palm" />
+		<child link="right_index_mp" />
+		<origin xyz="-0.027240979039914317 -0.0022069668041747544 0.06940680269673662" rpy="1.6668743340007357 1.4123694457100915 0.0089347878931616" />
+		<axis xyz="-8.881784197001252e-16 -1.1102230246251565e-16 0.9999999999999973" />
+		<limit lower="-0.4363323129985824" upper="0.5235987755982988" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_index_pp">
+		<inertial>
+			<origin xyz="3.2413764957616794e-18 -1.2144450510052133e-17 6.868053561200404e-17" rpy="0.0 0.0 0.0" />
+			<mass value="0.01132114862968844" />
+			<inertia ixx="0.04982968696098919" iyy="0.05037901655825475" izz="0.005805237478892593" ixy="1.084260814524803e-06" ixz="-0.0035894224379817113" iyz="-4.528530974635825e-05" />
+		</inertial>
+		<visual>
+			<origin xyz="3.2413764957616794e-18 -1.2144450510052133e-17 6.868053561200404e-17" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/I-PP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_index_mcp">
+		<parent link="right_index_mp" />
+		<child link="right_index_pp" />
+		<origin xyz="-0.01875000000004235 5.356778218562262e-17 -0.0009999999999997242" rpy="7.200356054473043e-15 -1.1586275570717532 -7.761768082277513e-15" />
+		<axis xyz="3.552713678800501e-15 -1.0000000000000044 -1.27675647831893e-15" />
+		<limit lower="-1.0471975511965976" upper="1.7453292519943295" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_index_fingertip">
+		<inertial>
+			<origin xyz="4.681972832492101e-17 -8.547712612320484e-17 -4.374792614639457e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.10739828939002305" />
+			<inertia ixx="0.5923049588597477" iyy="0.6013927551664877" izz="0.03750697529925875" ixy="4.7308461782597466e-05" ixz="0.017709973500229417" iyz="0.00012826675215776994" />
+		</inertial>
+		<visual>
+			<origin xyz="4.681972832492101e-17 -8.547712612320484e-17 -4.374792614639457e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/I-FingerTipAssembly-Black.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_index_pip">
+		<parent link="right_index_pp" />
+		<child link="right_index_fingertip" />
+		<origin xyz="0.00149999999999979 1.4352077429940977e-17 0.03700000000000054" rpy="-1.230428212301434e-16 -0.28395867321156976 4.391468296782341e-15" />
+		<axis xyz="-1.2212453270876722e-15 -1.0000000000000062 -1.0130785099704553e-15" />
+		<limit lower="-0.2617993877991494" upper="1.8675022996339325" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_thumb_mp">
+		<inertial>
+			<origin xyz="-9.809996781920405e-17 -1.4983674023749671e-16 -0.003850000000000048" rpy="0.0 0.0 0.0" />
+			<mass value="0.055662858221089954" />
+			<inertia ixx="0.09055366647025549" iyy="0.07681332674072781" izz="0.047726222810248256" ixy="-0.004155658263676832" ixz="-0.00047893714614845117" iyz="0.0018559647438980654" />
+		</inertial>
+		<visual>
+			<origin xyz="-9.809996781920405e-17 -1.4983674023749671e-16 -0.003850000000000048" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/T-TP-R.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_thumb_cmc">
+		<parent link="right_palm" />
+		<child link="right_thumb_mp" />
+		<origin xyz="-0.028398719136200557 0.010997180928709029 0.030589533491631654" rpy="0.5235563352327315 0.5659773793116982 -1.7309174690689884" />
+		<axis xyz="-1.1171619185290638e-15 -1.1102230246251565e-16 -1.000000000000005" />
+		<limit lower="-0.7853981633974483" upper="0.5759586531581288" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_thumb_abd_link">
+		<inertial>
+			<origin xyz="-0.028000000000000323 -2.949029909160572e-17 -2.47198095326695e-17" rpy="0.0 0.0 0.0" />
+			<mass value="0.04849972783267987" />
+			<inertia ixx="0.02743772072004856" iyy="0.14212929137923425" izz="0.14922671735248455" ixy="0.0002861356115115523" ixz="0.0011066954312779526" iyz="0.0007617854769328448" />
+		</inertial>
+		<visual>
+			<origin xyz="-0.028000000000000323 -2.949029909160572e-17 -2.47198095326695e-17" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/R-T-AP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_thumb_abd">
+		<parent link="right_thumb_mp" />
+		<child link="right_thumb_abd_link" />
+		<origin xyz="-0.007999999999728648 -1.3812735677465326e-16 -0.003850000000000237" rpy="-1.2217304763960293 0.5916323673427959 5.995204332975845e-15" />
+		<axis xyz="3.3306690738754696e-15 0.3420201433256648 0.9396926207859191" />
+		<limit lower="-0.3141592653589793" upper="0.9599310885968813" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_thumb_pp">
+		<inertial>
+			<origin xyz="1.4278897406830282e-16 -1.1759145135290078e-16 5.942883444279594e-17" rpy="0.0 0.0 0.0" />
+			<mass value="0.010418590025481858" />
+			<inertia ixx="0.03394054936751339" iyy="0.033743304134744044" izz="0.0055229193755240115" ixy="-5.409959109463672e-06" ixz="-0.002319068052501463" iyz="-8.962085366401786e-05" />
+		</inertial>
+		<visual>
+			<origin xyz="1.4278897406830282e-16 -1.1759145135290078e-16 5.942883444279594e-17" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/T-PP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_thumb_mcp">
+		<parent link="right_thumb_abd_link" />
+		<child link="right_thumb_pp" />
+		<origin xyz="-0.028000000000000334 -3.190165465969079e-17 2.708947519086038e-16" rpy="1.3766765505351941e-14 1.4398452395323198 -3.1415926535897327" />
+		<axis xyz="-7.216449660063518e-15 -1.000000000000005 -4.2799097599299785e-14" />
+		<limit lower="-1.0471975511965976" upper="1.5707963267948966" effort="100" velocity="100" />
+	</joint>
+	
+	
+	<link name="right_thumb_fingertip">
+		<inertial>
+			<origin xyz="2.667488003680661e-16 -2.6450603811115643e-16 -3.1692490684656855e-16" rpy="0.0 0.0 0.0" />
+			<mass value="0.05518453298620406" />
+			<inertia ixx="0.1423618505124362" iyy="0.14037811201540495" izz="0.02117238119243049" ixy="1.629991930502731e-05" ixz="-0.00550404130780968" iyz="2.606194879132354e-05" />
+		</inertial>
+		<visual>
+			<origin xyz="2.667488003680661e-16 -2.6450603811115643e-16 -3.1692490684656855e-16" rpy="0.0 0.0 0.0" />
+			<geometry>
+				<mesh filename="../stl/T-DP.stl" scale="0.001 0.001 0.001" />
+			</geometry>
+			<material name="white" />
+		</visual>
+	</link>
+	<joint type="revolute" name="right_thumb_dip">
+		<parent link="right_thumb_pp" />
+		<child link="right_thumb_fingertip" />
+		<origin xyz="0.0009999999999980985 -1.3284677295600182e-15 0.032000000000001534" rpy="-1.1333722657555106e-14 -0.3492153931115447 1.4400328473454333e-14" />
+		<axis xyz="-1.3655743202889425e-14 -1.0000000000000073 -8.326672684688674e-17" />
+		<limit lower="-0.9599310885968813" upper="1.8675022996339325" effort="100" velocity="100" />
+	</joint>
+</robot>

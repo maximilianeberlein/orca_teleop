@@ -12,6 +12,7 @@ Usage:
   python scripts/multicam_teleop_demo.py path/to/model path/to/urdf --camera-indices 0 2 4
 """
 
+import os
 import sys
 import time
 import multiprocessing
@@ -114,7 +115,7 @@ def retarget_process_worker(landmark_queue, angles_queue, stop_event, viewer_sto
 
     retargeter.enable_viz = (viewer is not None)
 
-    timing_accum = {"retarget": 0.0, "viewer": 0.0, "total": 0.0}
+    timing_accum = {"retarget": 0.0, "viewer": 0.0, "total": 0.0, "e2e": 0.0}
     timing_count = 0
 
     while not stop_event.is_set():
@@ -123,15 +124,17 @@ def retarget_process_worker(landmark_queue, angles_queue, stop_event, viewer_sto
             break
 
         try:
-            landmarks = landmark_queue.get(timeout=0.05)
+            item = landmark_queue.get(timeout=0.05)
         except (queue.Empty, EOFError):
             continue
         # Drain to latest frame
         while True:
             try:
-                landmarks = landmark_queue.get_nowait()
+                item = landmark_queue.get_nowait()
             except (queue.Empty, EOFError):
                 break
+
+        landmarks, capture_ts = item
 
         t_total = time.perf_counter()
 
@@ -155,18 +158,21 @@ def retarget_process_worker(landmark_queue, angles_queue, stop_event, viewer_sto
         t_viewer = time.perf_counter() - t0
 
         t_total_elapsed = time.perf_counter() - t_total
+        t_e2e = (time.time() - capture_ts) if capture_ts > 0 else 0.0
 
         if do_debug_timing:
             timing_accum["retarget"] += t_retarget
             timing_accum["viewer"] += t_viewer
             timing_accum["total"] += t_total_elapsed
+            timing_accum["e2e"] += t_e2e
             timing_count += 1
             if timing_count >= 30:
                 n = timing_count
                 print(
                     f"[retarget] retarget={timing_accum['retarget']/n*1000:.1f}ms "
                     f"viewer={timing_accum['viewer']/n*1000:.1f}ms "
-                    f"total={timing_accum['total']/n*1000:.1f}ms ({n} frames avg)"
+                    f"total={timing_accum['total']/n*1000:.1f}ms "
+                    f"e2e={timing_accum['e2e']/n*1000:.1f}ms ({n} frames avg)"
                 )
                 timing_accum = {k: 0.0 for k in timing_accum}
                 timing_count = 0
@@ -208,6 +214,8 @@ def main():
     parser.add_argument('--no-orientation-weight', action='store_true',
                         help='Disable orientation-based per-camera weighting')
     args = parser.parse_args()
+    args.model_path = os.path.abspath(args.model_path)
+    args.urdf_path = os.path.abspath(args.urdf_path)
 
     if args.retargeter == 'neural-geort' and (not args.geort_checkpoint or not args.geort_config):
         print("Error: --geort-checkpoint and --geort-config required for neural-geort retargeter")
@@ -223,8 +231,8 @@ def main():
     # Landmark queue: ingress (main process) → retarget process
     landmark_queue = multiprocessing.Queue()
 
-    def process_landmarks(landmarks):
-        landmark_queue.put_nowait(landmarks)
+    def process_landmarks(landmarks, capture_ts=0.0):
+        landmark_queue.put_nowait((landmarks, capture_ts))
 
     ingress = MultiCamIngress(
         model_path=args.model_path,

@@ -1,3 +1,10 @@
+"""MediaPipe webcam teleop demo for the ORCA hand.
+
+Usage:
+  python scripts/mediapipe_teleop_demo.py models/orcahand-r-sensing models/orcahand-model/urdf/model.urdf --no-robot
+"""
+
+import os
 import sys
 import time
 import multiprocessing
@@ -115,6 +122,8 @@ def main():
     parser.add_argument('--geort-config', type=str, default=None, help='Path to GeoRT config JSON (with joint limits)')
     parser.add_argument('--debug-timing', action='store_true', help='Print per-stage timing breakdown every 30 frames')
     args = parser.parse_args()
+    args.model_path = os.path.abspath(args.model_path)
+    args.urdf_path = os.path.abspath(args.urdf_path)
     show_mano = args.show_mano or args.manual_calib
     debug_timing = args.debug_timing
 
@@ -150,6 +159,8 @@ def main():
 
     if args.manual_calib and viewer:
         viewer.add_calibration_controls(retargeter)
+
+    retargeter.enable_viz = (viewer is not None)
 
     ingress = MediaPipeIngress(args.model_path, callback=process_landmarks)
 
